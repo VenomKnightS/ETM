@@ -178,6 +178,16 @@
   .flash.err { background:#2a1414; border-color:var(--red); }
   dialog { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:16px; max-width:640px; width:92vw; margin:auto; }
   dialog::backdrop { background:#000a; }
+  .hbars { display:flex; gap:2px; align-items:flex-end; height:110px; }
+  .hcol { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; min-width:0; }
+  .hstack { flex:1; width:100%; display:flex; flex-direction:column-reverse; background:#111b29; border-radius:2px 2px 0 0; overflow:hidden; }
+  .hstack .hk { background:var(--green); } .hstack .hl { background:var(--red); }
+  .hlab { font-size:9px; color:var(--dim); height:12px; margin-top:2px; white-space:nowrap; }
+  .hrow { display:flex; align-items:center; gap:6px; padding:3px 0; border-bottom:1px solid #0d1824; font-size:12px; }
+  #inf-dlg { max-width:640px; max-height:90vh; overflow-y:auto; padding:0; }
+  .ov-row { display:flex; gap:10px; align-items:center; padding:6px 4px; border-bottom:1px solid #0d1824; cursor:pointer; }
+  .ov-row:hover { background:#111b29; } .ov-row img { width:32px; height:32px; border-radius:3px; }
+  .ov-row .nm { font-weight:bold; } .ov-row .cls { color:var(--dim); font-size:11px; }
   /* fits */
   .chipbtn { display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--border); color:var(--dim); border-radius:14px; padding:4px 10px; cursor:pointer; font-size:12px; }
   .chipbtn.on { border-color:var(--teal); color:var(--text); background:#14324a; }
@@ -253,8 +263,8 @@
   <span class="logo">⚡ EVE TILES</span>
   <div id="tabs">
     <button class="tab-btn" data-page="kb">☠ Killboard</button>
-    <button class="tab-btn" data-page="killed">🎯 Ships Killed</button>
-    <button class="tab-btn" data-page="ships">🚀 My Ships</button>
+    <button class="tab-btn" data-page="ships">🚀 Ships</button>
+    <button class="tab-btn" data-page="habits">🕐 Habits</button>
     <button class="tab-btn" data-page="skills">📚 Skills</button>
     <button class="tab-btn" data-page="plans">🗺 Plans</button>
     <button class="tab-btn" data-page="fits">🛠 Fits</button>
@@ -306,35 +316,34 @@
   </div>
 </div>
 
-<!-- ══════════ KILLS BY TYPE ══════════ -->
-<div id="page-killed" class="page">
+<!-- ══════════ SHIPS ══════════ -->
+<div id="page-ships" class="page">
   <div class="card">
-    <div class="label-row"><span class="title" id="killed-title">Ships this pilot has killed</span><span class="sub" id="killed-sum"></span></div>
+    <div class="label-row"><span class="title">Ships</span><span class="sub" id="ships-sum"></span></div>
+    <div class="filter-row"><span class="seg" id="ships-mode"><button data-v="killed" class="on">Ships killed</button><button data-v="kills">Kills with</button><button data-v="deaths">Deaths in</button></span></div>
     <div class="filter-row">
       <select class="f-period"><option value="0">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
       <label><input type="checkbox" class="f-pods"> Hide capsules</label>
       <label><input type="checkbox" class="f-solo"> Solo only</label>
-      <span class="seg" id="killed-mode"><button data-v="flat" class="on">By ship</button><button data-v="group">By class</button></span>
-      <input id="killed-search" type="text" placeholder="search…" style="width:130px">
-    </div>
-    <div id="killed-list" class="list"></div>
-    <div class="muted" style="font-size:11px;margin-top:6px">Every row is a ship type this pilot <b>destroyed</b>. Tap one to see which of their own ships they were flying, then tap any entry to open those kills.</div>
-  </div>
-</div>
-
-<!-- ══════════ MY SHIPS ══════════ -->
-<div id="page-ships" class="page">
-  <div class="card">
-    <div class="label-row"><span class="title">My ships — kills &amp; deaths</span><span class="sub" id="ships-sum"></span></div>
-    <div class="filter-row">
-      <span class="seg" id="ships-mode"><button data-v="kills" class="on">Kills with</button><button data-v="deaths">Deaths in</button></span>
-      <select class="f-period"><option value="0">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
-      <label><input type="checkbox" class="f-pods"> Hide capsules</label>
+      <span class="seg" id="ships-group"><button data-v="flat" class="on">By ship</button><button data-v="group">By class</button></span>
       <input id="ships-search" type="text" placeholder="search…" style="width:130px">
     </div>
     <div id="ships-list" class="list"></div>
-    <div class="muted" style="font-size:11px;margin-top:6px">Every row is a ship this pilot <b>flew</b>. Tap one to see what it killed and what it died to, then tap any entry to open those killmails.</div>
+    <div class="muted" id="ships-hint" style="font-size:11px;margin-top:6px"></div>
   </div>
+</div>
+
+<!-- ══════════ HABITS ══════════ -->
+<div id="page-habits" class="page">
+  <div class="card">
+    <div class="label-row"><span class="title">Habits — when, where, with whom</span><span class="sub" id="hab-sum"></span></div>
+    <div class="filter-row" style="margin:0">
+      <select class="f-period"><option value="0">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
+      <label><input type="checkbox" class="f-solo"> Solo only</label>
+      <span class="seg" id="hab-tz"><button data-v="eve" class="on">EVE time</button><button data-v="local">My time</button></span>
+    </div>
+  </div>
+  <div id="hab-body"></div>
 </div>
 
 <!-- ══════════ SKILLS ══════════ -->
@@ -360,8 +369,14 @@
       <button class="btn green" id="sso-login-2">🔑 Log in with EVE</button>
     </div>
   </div>
+  <div id="sk-overview" class="card" style="display:none">
+    <div class="label-row"><span class="title">Training — all characters</span><span class="row" style="gap:6px"><span class="sub" id="sk-ov-sub"></span>
+      <button class="btn sm ghost" id="sk-ov-all" title="Calendar reminders for every character's queue">📅 All</button><button class="btn sm ghost" id="sk-ov-refresh">⟳</button></span></div>
+    <div id="sk-ov-list"></div>
+    <div class="cls muted" style="margin-top:6px;font-size:11px">📅 adds a reminder to your phone's calendar for when that queue runs out (alerts 3 h and 30 min before). Tap a character for details.</div>
+  </div>
   <div class="row" style="margin-bottom:10px" id="sk-char-row">
-    <select id="sk-char" class="grow" style="max-width:300px"></select>
+    <select id="sk-char" class="grow" style="max-width:300px;min-width:170px"></select>
     <button class="btn sm ghost" id="sk-refresh">⟳ Refresh</button>
     <button class="btn sm ghost" id="sk-add">+ Add character</button>
     <span class="grow"></span><button class="btn sm ghost" id="sk-setup" title="Developer setup">⚙</button>
@@ -452,6 +467,7 @@
     <div class="row" style="margin-bottom:8px">
       <input id="fit-search" type="text" placeholder="search name, ship, module…" class="grow" style="min-width:150px">
       <button class="btn sm green" id="fit-paste">+ Paste fit</button>
+      <button class="btn sm gold" id="fit-popular">🛠 Popular fits…</button>
       <button class="btn sm ghost" id="fit-tagmgr">🏷 Tags</button>
       <button class="btn sm ghost" id="fit-export">⇩ Export .xlsx</button>
       <button class="btn sm ghost" id="fit-import">⇪ Import</button>
@@ -462,6 +478,13 @@
   </div>
 </div>
 
+<dialog id="pop-dlg" style="max-width:420px">
+  <div class="card-title">Popular fits for a ship</div>
+  <p class="muted" style="margin-bottom:8px">Type a hull name — the app looks at its most recent losses to players on zKillboard and shows the most common fits.</p>
+  <input id="pop-ship" type="text" list="pop-ships" placeholder="e.g. Merlin, Raptor, Stiletto" style="width:100%" autocomplete="off">
+  <datalist id="pop-ships"></datalist>
+  <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="pop-cancel">Cancel</button><button class="btn green" id="pop-go">Find fits</button></div>
+</dialog>
 <dialog id="fit-dlg">
   <div class="card-title" id="fit-dlg-title">Save fit</div>
   <div class="cs-form">
@@ -540,9 +563,12 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-title">Quick add — paste a list</div>
-          <p class="muted" style="margin-bottom:6px">One name per line. A blank line starts the next account. The first name of each account is its main. Optional account label: start a block with <code># Label</code>.</p>
-          <textarea id="cs-bulk" placeholder="# Account 1&#10;Main Pilot&#10;Alt Two&#10;Alt Three&#10;&#10;# Account 2&#10;Other Main&#10;Other Alt"></textarea>
+          <div class="card-title">Quick add — type, paste or dictate 🎤</div>
+          <p class="muted" style="margin-bottom:6px"><b>Commas between characters, semicolon between accounts</b> — the first name of each account is its main. Empty slots: leave blank or say/type <code>x</code>.
+            Works with voice typing: say "comma" and "semicolon" (or "next account"). Names are matched to EVE, so capitals don't matter.
+            One name per line with blank lines between accounts works too.</p>
+          <textarea id="cs-bulk" placeholder="Main One, Alt Two, Alt Three; Second Main, x, x; Third Main, Their Alt"></textarea>
+          <div id="cs-bulk-preview" class="cls" style="margin-top:6px"></div>
           <div class="row" style="margin-top:8px"><span class="muted">Add to group:</span><select id="cs-bulk-group"></select><span class="grow"></span><button class="btn green" id="cs-bulk-add">Add all</button></div>
         </div>
       </div>
@@ -593,6 +619,10 @@
   <div class="km-top"><span class="card-title" style="margin:0" id="kml-title">Killmails</span><span class="grow"></span><button class="btn sm ghost" id="kml-close">✕ Close</button></div>
   <div id="kml-body" style="padding:6px 12px 12px"></div>
 </dialog>
+<dialog id="inf-dlg">
+  <div class="km-top"><span class="card-title" style="margin:0" id="inf-title">Popular fits</span><span class="grow"></span><button class="btn sm ghost" id="inf-close">✕ Close</button></div>
+  <div id="inf-body" style="padding:12px 14px"></div>
+</dialog>
 <dialog id="km-dlg">
   <div class="km-top"><span class="card-title" style="margin:0" id="km-title">Killmail</span><span class="grow"></span><span id="km-links"></span><button class="btn sm ghost" id="km-close">✕ Close</button></div>
   <div id="km-body"></div>
@@ -636,7 +666,7 @@ const SDE = window.EVE_SDE;
 const ESI_COMPAT = '2026-11-01';
 // The app's own EVE developer Client ID (public, not a secret — it's visible to anyone with this page).
 // Set it once here so users just press "Log in with EVE". Never put the Secret Key anywhere in this app.
-const BUILT_IN_CLIENT_ID = '';
+const BUILT_IN_CLIENT_ID = '9d024e51aada4dd680b4a0d727cc7f52';
 const SSO_SCOPES = 'esi-skills.read_skills.v1 esi-skills.read_skillqueue.v1 esi-clones.read_implants.v1';
 const CAPSULES = new Set([670, 33328]);
 // Callback/redirect URL: the page URL without query/hash, and without a trailing index.html,
@@ -727,6 +757,12 @@ function runMigrations() {
     const tr = LS.get(KEYS.tracked, []);
     if (Array.isArray(tr)) LS.set(KEYS.tracked, KB.prune(tr.map(t => ({ ...t, viewed: t.viewed || t.added || 0 }))));
     LS.set(KEYS.migrated, 2);
+  }
+  if (LS.get(KEYS.migrated, 0) < 3) {
+    // v3: the list holds only ★ tracked pilots (+ the one being viewed).
+    const tr = LS.get(KEYS.tracked, []), sel = LS.get(KEYS.kbSelected, null);
+    if (Array.isArray(tr)) LS.set(KEYS.tracked, tr.filter(t => t.star || t.id === sel));
+    LS.set(KEYS.migrated, 3);
   }
   // Plans schema guard
   const p = LS.get(KEYS.plans, null);
@@ -1028,11 +1064,11 @@ const KB = {
   zkStats: new Map(),   // charId -> zKill stats
   info: new Map(),      // charId -> { corp, alliance }
   feedPage: 1, feedSize: 50,
-  open: { killed: null, ships: null },
+  open: { ships: null },
 
   tracked() { return LS.get(KEYS.tracked, []); },
-  RECENT_MAX: 8,
-  // Keeps every ★ tracked pilot plus the most recently viewed others.
+  RECENT_MAX: 1,
+  // Keeps every ★ tracked pilot plus only the one untracked pilot being looked at right now.
   prune(t) {
     const keep = t.filter(c => c.star);
     const recent = t.filter(c => !c.star).sort((a, b) => (b.viewed || b.added || 0) - (a.viewed || a.added || 0)).slice(0, this.RECENT_MAX);
@@ -1050,7 +1086,7 @@ const KB = {
     const recent = t.filter(c => !c.star).sort((a, b) => (b.viewed || b.added || 0) - (a.viewed || a.added || 0));
     sel.innerHTML = (t.length ? '' : '<option value="">— no pilots yet —</option>')
       + (starred.length ? `<optgroup label="★ Tracked">${starred.map(opt).join('')}</optgroup>` : '')
-      + (recent.length ? `<optgroup label="Recent — tap ☆ Track to keep">${recent.map(opt).join('')}</optgroup>` : '');
+      + (recent.length ? `<optgroup label="Viewing — tap ☆ Track to keep">${recent.map(opt).join('')}</optgroup>` : '');
     if (this.charId) sel.value = String(this.charId);
     const cur = this.current();
     $('#kb-star').textContent = cur?.star ? '★ Tracked' : '☆ Track';
@@ -1089,7 +1125,8 @@ const KB = {
     }
     id = Number(id) || null;
     this.charId = id; LS.set(KEYS.kbSelected, id);
-    this.kms = new Map(); this.st = null; this.feedPage = 1; this.open = { killed: null, ships: null };
+    { const t = this.tracked(); const keep = t.filter(c => c.star || c.id === id); if (keep.length !== t.length) LS.set(KEYS.tracked, keep); } // drop untracked pilots you've moved away from
+    this.kms = new Map(); this.st = null; this.feedPage = 1; this.open = { ships: null };
     this.renderSelector();
     if (!id) { this.renderAll(); return; }
     await this.loadCache();
@@ -1135,8 +1172,8 @@ const KB = {
         for (const k of batch) this.kms.set(k.id, k);
         this.scheduleRender();
       }
-      if (job.done) this.loadCache().then(() => this.renderAll());
-      this.renderSyncInfo(job);
+      if (job.done) this.loadCache().then(() => this.renderAll()); // renderAll redraws the sync line with fresh counts
+      else this.renderSyncInfo(job);
     }
   },
   _rt: null,
@@ -1193,7 +1230,7 @@ const KB = {
       const kind = this.classify(km);
       if (!kind) continue;
       const z = this.st?.list[km.id] || [];
-      if (f.solo && !(kind === 'kill' && z[2])) continue;
+      if (f.solo && !z[2]) continue; // zKillboard's solo flag: one attacker (solo kills and solo losses)
       out.push({ km, kind, value: z[1] || 0, solo: !!z[2], npc: !!z[3] });
     }
     return out;
@@ -1248,8 +1285,8 @@ const KB = {
   renderAll() {
     const page = UI.page;
     if (page === 'kb') this.renderKB();
-    if (page === 'killed') this.renderKilled();
     if (page === 'ships') this.renderShips();
+    if (page === 'habits') this.renderHabits();
     this.renderSyncInfo(Sync.jobs.get(this.charId));
   },
 
@@ -1360,68 +1397,153 @@ const KB = {
   },
   async ensureTypeNames(types) { if (await Names.load(types.filter(t => !Names.knownType(t)))) this.scheduleRender(); },
 
-  renderKilled() {
-    const box = $('#killed-list');
-    if (!this.charId) { box.innerHTML = '<div class="empty">Pick a pilot above.</div>'; $('#killed-sum').textContent = ''; return; }
-    const { rows, total } = this.victimStats(this.filters('killed'));
-    const q = $('#killed-search').value.trim().toLowerCase();
-    const grouped = $('#killed-mode .on').dataset.v === 'group';
-    let list = q ? rows.filter(r => Names.typeName(r.type).toLowerCase().includes(q) || Names.typeClass(r.type).toLowerCase().includes(q)) : rows;
-    $('#killed-sum').textContent = `${fmtNum(total)} kills · ${rows.length} ship types`;
-    const max = rows[0]?.count || 1;
-    const rowHTML = r => {
-      const open = this.open.killed === r.type;
-      const html = `<div class="lrow${open ? ' open' : ''}" data-type="${r.type}">${this.shipRowHTML(r.type,
-        `<div class="big green">${fmtNum(r.count)}</div><div class="cls">${fmtISK(r.isk)}</div>`,
-        `<div class="bar" style="width:120px"><div class="k" style="width:${Math.round(r.count / max * 100)}%"></div></div>`)}</div>`;
-      if (!open) return html;
-      const by = [...r.by.entries()].sort((a, b) => b[1] - a[1]);
-      const who = esc(this.current()?.name || 'This pilot'), vt = esc(Names.typeName(r.type));
-      return html + `<div class="drill"><h4>${who} was flying… when killing ${vt}</h4>${this.drillList(by, v => '×' + v, t => `v|${r.type}|${t}`)}
-        <div class="dl tap" data-kml="v|${r.type}|*" style="margin-top:4px"><span></span><span class="teal">Show all ${fmtNum(r.count)} ${vt} kills</span><span class="cnt">›</span></div></div>`;
-    };
-    if (!list.length) box.innerHTML = `<div class="empty">${this.kms.size ? 'No kills match.' : 'No killmails cached yet — sync this pilot.'}</div>`;
-    else if (!grouped) box.innerHTML = list.map(rowHTML).join('');
-    else {
-      const g = new Map();
-      for (const r of list) { const c = Names.typeClass(r.type) || 'Other'; if (!g.has(c)) g.set(c, []); g.get(c).push(r); }
-      box.innerHTML = [...g.entries()].map(([c, rs]) => [c, rs, rs.reduce((s, r) => s + r.count, 0)]).sort((a, b) => b[2] - a[2])
-        .map(([c, rs, n]) => `<div class="group-hdr"><span>${esc(c)}</span><span>${fmtNum(n)}</span></div>` + rs.map(rowHTML).join('')).join('');
-    }
-    this.ensureTypeNames(rows.flatMap(r => [r.type, ...r.by.keys()]));
-  },
-
+  // ── Ships tab: one list, three views (ships killed / kills with / deaths in) ──
   renderShips() {
     const box = $('#ships-list');
     if (!this.charId) { box.innerHTML = '<div class="empty">Pick a pilot above.</div>'; $('#ships-sum').textContent = ''; return; }
     const mode = $('#ships-mode .on').dataset.v;
-    const all = this.shipStats(this.filters('ships'));
+    const grouped = $('#ships-group .on').dataset.v === 'group';
+    const f = this.filters('ships');
     const q = $('#ships-search').value.trim().toLowerCase();
-    let rows = all.filter(r => mode === 'kills' ? r.kills > 0 : r.deaths > 0);
-    if (q) rows = rows.filter(r => Names.typeName(r.type).toLowerCase().includes(q) || Names.typeClass(r.type).toLowerCase().includes(q));
-    rows.sort(mode === 'kills' ? (a, b) => b.kills - a.kills || a.deaths - b.deaths : (a, b) => b.deaths - a.deaths || b.kills - a.kills);
-    const tk = all.reduce((s, r) => s + r.kills, 0), td = all.reduce((s, r) => s + r.deaths, 0);
-    $('#ships-sum').textContent = `${fmtNum(tk)} kills · ${fmtNum(td)} deaths · ${all.length} hulls`;
-    if (!rows.length) { box.innerHTML = `<div class="empty">${this.kms.size ? 'Nothing here for this filter.' : 'No killmails cached yet — sync this pilot.'}</div>`; return; }
-    box.innerHTML = rows.map(r => {
-      const tot = r.kills + r.deaths, kp = tot ? Math.round(r.kills / tot * 100) : 0;
-      const kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : (r.kills ? '∞' : '—');
-      const open = this.open.ships === r.type;
-      const right = `<div><span class="big green">${fmtNum(r.kills)}</span> <span class="muted">/</span> <span class="big red">${fmtNum(r.deaths)}</span></div><div class="cls">K/D ${kd}</div>`;
-      let html = `<div class="lrow${open ? ' open' : ''}" data-type="${r.type}">${this.shipRowHTML(r.type, right,
-        `<div class="bar" style="width:140px"><div class="k" style="width:${kp}%"></div><div class="l" style="width:${tot ? 100 - kp : 0}%"></div></div>`)}</div>`;
-      if (open) {
-        const killed = [...r.killed.entries()].sort((a, b) => b[1] - a[1]);
-        const died = [...r.diedTo.entries()].sort((a, b) => b[1].n - a[1].n);
-        const kHTML = `<div><h4>What it killed (${fmtNum(r.kills)})</h4>${this.drillList(killed, v => '×' + v, t => `sk|${r.type}|${t}`)}${r.kills ? `<div class="dl tap" data-kml="sk|${r.type}|*"><span></span><span class="teal">All ${fmtNum(r.kills)} kills</span><span class="cnt">›</span></div>` : ''}</div>`;
-        const dHTML = `<div><h4>What it died to (${fmtNum(r.deaths)} losses)</h4>${this.drillList(died, v => `×${v.n}${v.fb ? ` <span class="muted" title="final blows">(${v.fb} FB)</span>` : ''}`, t => `sd|${r.type}|${t}`)}${r.deaths ? `<div class="dl tap" data-kml="sd|${r.type}|*"><span></span><span class="teal">All ${fmtNum(r.deaths)} losses</span><span class="cnt">›</span></div>` : ''}</div>`;
-        html += `<div class="drill"><div class="cls" style="margin-bottom:4px">ISK killed ${fmtISK(r.iskK)} · ISK lost ${fmtISK(r.iskL)} · win rate ${kp}%</div>
-          <div class="drill-cols">${mode === 'kills' ? kHTML + dHTML : dHTML + kHTML}</div>
-          <div class="cls" style="margin-top:6px">"Died to" counts each enemy ship type once per loss; FB = it landed the final blow.</div></div>`;
+    const who = esc(this.current()?.name || 'This pilot');
+    let rows, need = [];
+    if (mode === 'killed') {
+      const { rows: vr, total } = this.victimStats(f);
+      rows = vr.map(r => ({ type: r.type, n: r.count, isk: r.isk, r }));
+      $('#ships-sum').textContent = `${fmtNum(total)} kills · ${vr.length} ship types`;
+      $('#ships-hint').innerHTML = `Each row is a ship type ${who} <b>destroyed</b>. Tap one to see what they were flying, then tap an entry to open those kills.`;
+      need = vr.flatMap(r => [r.type, ...r.by.keys()]);
+    } else {
+      const all = this.shipStats(f);
+      rows = all.filter(r => mode === 'kills' ? r.kills > 0 : r.deaths > 0)
+        .map(r => ({ type: r.type, n: mode === 'kills' ? r.kills : r.deaths, isk: mode === 'kills' ? r.iskK : r.iskL, r }));
+      const tk = all.reduce((s, r) => s + r.kills, 0), td = all.reduce((s, r) => s + r.deaths, 0);
+      $('#ships-sum').textContent = `${fmtNum(tk)} kills · ${fmtNum(td)} deaths · ${all.length} hulls`;
+      $('#ships-hint').innerHTML = `Each row is a ship ${who} <b>flew</b>. Tap one to see what it killed and what it died to, then tap an entry to open those killmails.`;
+      need = all.flatMap(r => [r.type, ...r.killed.keys(), ...r.diedTo.keys()]);
+    }
+    if (q) rows = rows.filter(x => Names.typeName(x.type).toLowerCase().includes(q) || Names.typeClass(x.type).toLowerCase().includes(q));
+    rows.sort((a, b) => b.n - a.n || b.isk - a.isk);
+    const max = Math.max(1, ...rows.map(x => x.n));
+    const color = mode === 'deaths' ? 'red' : 'green';
+    const fitsBtn = t => `<button class="btn sm ghost" data-inf="${t}" style="margin-top:8px">🛠 Popular fits for ${esc(Names.typeName(t))}</button>`;
+    const rowHTML = x => {
+      const open = this.open.ships === x.type;
+      let sub = '';
+      if (mode !== 'killed') {
+        const r = x.r, kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : (r.kills ? '∞' : '—');
+        sub = ` · <span class="green">${fmtNum(r.kills)}</span>/<span class="red">${fmtNum(r.deaths)}</span> · K/D ${kd}`;
       }
-      return html;
-    }).join('');
-    this.ensureTypeNames(all.flatMap(r => [r.type, ...r.killed.keys(), ...r.diedTo.keys()]));
+      const html = `<div class="lrow${open ? ' open' : ''}" data-type="${x.type}">${this.shipRowHTML(x.type,
+        `<div class="big ${color}">${fmtNum(x.n)}</div><div class="cls">${fmtISK(x.isk)}</div>`,
+        `${sub}<div class="bar" style="width:140px"><div class="${mode === 'deaths' ? 'l' : 'k'}" style="width:${Math.round(x.n / max * 100)}%"></div></div>`)}</div>`;
+      if (!open) return html;
+      if (mode === 'killed') {
+        const by = [...x.r.by.entries()].sort((a, b) => b[1] - a[1]), vt = esc(Names.typeName(x.type));
+        return html + `<div class="drill"><h4>${who} was flying… when killing ${vt}</h4>${this.drillList(by, v => '×' + v, t => `v|${x.type}|${t}`)}
+          <div class="dl tap" data-kml="v|${x.type}|*" style="margin-top:4px"><span></span><span class="teal">Show all ${fmtNum(x.n)} ${vt} kills</span><span class="cnt">›</span></div>${fitsBtn(x.type)}</div>`;
+      }
+      const r = x.r, tot = r.kills + r.deaths, kp = tot ? Math.round(r.kills / tot * 100) : 0;
+      const killed = [...r.killed.entries()].sort((a, b) => b[1] - a[1]);
+      const died = [...r.diedTo.entries()].sort((a, b) => b[1].n - a[1].n);
+      const kHTML = `<div><h4>What it killed (${fmtNum(r.kills)})</h4>${this.drillList(killed, v => '×' + v, t => `sk|${r.type}|${t}`)}${r.kills ? `<div class="dl tap" data-kml="sk|${r.type}|*"><span></span><span class="teal">All ${fmtNum(r.kills)} kills</span><span class="cnt">›</span></div>` : ''}</div>`;
+      const dHTML = `<div><h4>What it died to (${fmtNum(r.deaths)} losses)</h4>${this.drillList(died, v => `×${v.n}${v.fb ? ` <span class="muted" title="final blows">(${v.fb} FB)</span>` : ''}`, t => `sd|${r.type}|${t}`)}${r.deaths ? `<div class="dl tap" data-kml="sd|${r.type}|*"><span></span><span class="teal">All ${fmtNum(r.deaths)} losses</span><span class="cnt">›</span></div>` : ''}</div>`;
+      return html + `<div class="drill"><div class="cls" style="margin-bottom:4px">ISK killed ${fmtISK(r.iskK)} · ISK lost ${fmtISK(r.iskL)} · win rate ${kp}%</div>
+        <div class="drill-cols">${mode === 'kills' ? kHTML + dHTML : dHTML + kHTML}</div>
+        <div class="cls" style="margin-top:6px">"Died to" counts each enemy ship type once per loss; FB = it landed the final blow.</div>${fitsBtn(r.type)}</div>`;
+    };
+    if (!rows.length) box.innerHTML = `<div class="empty">${this.kms.size ? 'Nothing here for these filters.' : 'No killmails cached yet — sync this pilot.'}</div>`;
+    else if (!grouped) box.innerHTML = rows.map(rowHTML).join('');
+    else {
+      const g = new Map();
+      for (const x of rows) { const c = Names.typeClass(x.type) || 'Other'; if (!g.has(c)) g.set(c, []); g.get(c).push(x); }
+      box.innerHTML = [...g.entries()].map(([c, rs]) => [c, rs, rs.reduce((s, x) => s + x.n, 0)]).sort((a, b) => b[2] - a[2])
+        .map(([c, rs, n]) => `<div class="group-hdr"><span>${esc(c)}</span><span>${fmtNum(n)}</span></div>` + rs.map(rowHTML).join('')).join('');
+    }
+    this.ensureTypeNames(need);
+  },
+
+  // ── Habits: when, where, with whom ──
+  async renderHabits() {
+    const set = (id, h) => $('#' + id).innerHTML = h;
+    if (!this.charId) { set('hab-body', '<div class="empty">Pick a pilot above.</div>'); return; }
+    if (!this.kms.size) { set('hab-body', '<div class="empty">No killmails cached yet — sync this pilot.</div>'); return; }
+    const f = this.filters('habits');
+    const ms = this.mails(f);
+    const me = this.charId;
+    const local = $('#hab-tz .on').dataset.v === 'local';
+    const off = local ? -new Date().getTimezoneOffset() / 60 : 0;
+    const hk = Array(24).fill(0), hl = Array(24).fill(0), dk = Array(7).fill(0), dl = Array(7).fill(0);
+    const sys = new Map(), wing = new Map(), nem = new Map(), fleet = [0, 0, 0, 0, 0];
+    let kills = 0, losses = 0, fleetSum = 0;
+    for (const { km, kind } of ms) {
+      const t = new Date(km.t + off * 3600e3), h = t.getUTCHours(), d = (t.getUTCDay() + 6) % 7;
+      (kind === 'kill' ? hk : hl)[h]++; (kind === 'kill' ? dk : dl)[d]++;
+      let s = sys.get(km.sys); if (!s) sys.set(km.sys, s = { k: 0, l: 0 }); kind === 'kill' ? s.k++ : s.l++;
+      if (kind === 'kill') {
+        kills++;
+        const n = km.a.length; fleetSum += n;
+        fleet[n <= 1 ? 0 : n <= 5 ? 1 : n <= 10 ? 2 : n <= 30 ? 3 : 4]++;
+        for (const a of km.a) if (a[0] && a[0] !== me) {
+          let w = wing.get(a[0]); if (!w) wing.set(a[0], w = { n: 0, ships: new Map() });
+          w.n++; w.ships.set(a[1], (w.ships.get(a[1]) || 0) + 1);
+        }
+      } else {
+        losses++;
+        const seen = new Set();
+        for (const a of km.a) if (a[0] && !seen.has(a[0])) {
+          seen.add(a[0]);
+          let x = nem.get(a[0]); if (!x) nem.set(a[0], x = { n: 0, fb: 0, ships: new Map() });
+          x.n++; if (a[2]) x.fb++; x.ships.set(a[1], (x.ships.get(a[1]) || 0) + 1);
+        }
+      }
+    }
+    // busiest 4-hour window
+    const tot = hk.map((v, i) => v + hl[i]);
+    const peak = tot.indexOf(Math.max(...tot));
+    let best = 0, bestH = 0, bestD = 99;   // busiest 4h window; ties go to the one centred on the peak hour
+    for (let h = 0; h < 24; h++) {
+      let s = 0; for (let i = 0; i < 4; i++) s += tot[(h + i) % 24];
+      const d = Math.min(Math.abs(((h + 1.5) % 24) - peak), 24 - Math.abs(((h + 1.5) % 24) - peak));
+      if (s > best || (s === best && s > 0 && d < bestD)) { best = s; bestH = h; bestD = d; }
+    }
+    const hh = h => String(h % 24).padStart(2, '0') + ':00';
+    const tzName = local ? `your time (UTC${off >= 0 ? '+' : ''}${off})` : 'EVE time (UTC)';
+    $('#hab-sum').textContent = `${fmtNum(kills)} kills · ${fmtNum(losses)} losses`;
+    const maxH = Math.max(1, ...hk.map((v, i) => v + hl[i]));
+    const bars = (k, l, labels, max) => `<div class="hbars">${k.map((v, i) => `<div class="hcol" title="${labels[i]}: ${v} kills, ${l[i]} losses">
+        <div class="hstack"><div class="hl" style="height:${l[i] / max * 100}%"></div><div class="hk" style="height:${v / max * 100}%"></div></div>
+        <div class="hlab">${labels[i]}</div></div>`).join('')}</div>`;
+    const hourLabels = Array.from({ length: 24 }, (_, i) => i % 3 === 0 ? String(i).padStart(2, '0') : '');
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const maxD = Math.max(1, ...dk.map((v, i) => v + dl[i]));
+    const pct = n => kills ? Math.round(n / kills * 100) : 0;
+    const topList = (m, n) => [...m.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, n);
+    const topShip = ships => { const s = [...ships.entries()].sort((a, b) => b[1] - a[1])[0]; return s ? Names.typeName(s[0]) : ''; };
+    const draw = () => {
+      const sysRows = [...sys.entries()].sort((a, b) => (b[1].k + b[1].l) - (a[1].k + a[1].l)).slice(0, 10);
+      set('hab-body', `
+        <div class="card"><div class="label-row"><span class="title">Active hours — ${tzName}</span>
+          <span class="sub">${best ? `busiest ${hh(bestH)}–${hh(bestH + 4)}` : ''}</span></div>
+          ${bars(hk, hl, hourLabels, maxH)}
+          <div class="cls muted" style="margin:4px 0 10px"><span class="green">■</span> kills <span class="red">■</span> losses · tap a bar for numbers</div>
+          ${bars(dk, dl, days, maxD)}</div>
+        <div class="km-grid">
+          <div class="card" style="margin:0"><div class="card-title">Where (top systems)</div>
+            ${sysRows.map(([id, s]) => `<div class="hrow"><span class="grow">${esc(Names.name(id) || '…')}</span><span class="green">${s.k}</span>&nbsp;/&nbsp;<span class="red">${s.l}</span></div>`).join('') || '<div class="empty">—</div>'}</div>
+          <div class="card" style="margin:0"><div class="card-title">Fleet size on kills</div>
+            ${['Solo (1)', '2–5', '6–10', '11–30', '31+'].map((lbl, i) => `<div class="hrow"><span style="width:62px">${lbl}</span><div class="bar grow" style="margin:0 8px"><div class="k" style="width:${pct(fleet[i])}%"></div></div><span style="width:40px;text-align:right">${pct(fleet[i])}%</span></div>`).join('')}
+            <div class="cls muted" style="margin-top:6px">Average ${kills ? (fleetSum / kills).toFixed(1) : '—'} pilots on their kills</div></div>
+          <div class="card" style="margin:0"><div class="card-title">Flies with most</div>
+            ${topList(wing, 10).map(([id, w]) => `<div class="hrow"><span class="grow"><span class="pilot" data-pilot="${id}">${esc(Names.name(id) || '…')}</span> <span class="muted">${esc(topShip(w.ships))}</span></span><span>${w.n} <span class="muted">(${pct(w.n)}%)</span></span></div>`).join('') || '<div class="empty">Nobody — flies solo.</div>'}</div>
+          <div class="card" style="margin:0"><div class="card-title">Killed by most</div>
+            ${topList(nem, 10).map(([id, x]) => `<div class="hrow"><span class="grow"><span class="pilot" data-pilot="${id}">${esc(Names.name(id) || '…')}</span> <span class="muted">${esc(topShip(x.ships))}</span></span><span>${x.n}${x.fb ? ` <span class="muted">(${x.fb} FB)</span>` : ''}</span></div>`).join('') || '<div class="empty">No losses to players.</div>'}</div>
+        </div>`);
+    };
+    draw();
+    const ids = [...sys.keys(), ...topList(wing, 10).map(x => x[0]), ...topList(nem, 10).map(x => x[0])];
+    const ships = [...wing.values(), ...nem.values()].flatMap(x => [...x.ships.keys()]);
+    if (await Names.load([...ids, ...ships])) draw();
   },
 };
 
@@ -1634,6 +1756,7 @@ const Skills = {
   async render(force) {
     this.showSetup(false);
     this.renderCharSelect();
+    TRAIN.render(); TRAIN.loadAll(force);
     const id = this.activeId();
     if (!id) { $('#skills-content').style.display = 'none'; return; }
     const c = SSO.chars()[id];
@@ -1698,6 +1821,129 @@ const Skills = {
         }).join('') + '</div>';
     }).join('');
     $('#skill-list').innerHTML = html || '<div class="empty">No skills match.</div>';
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  TRAINING OVERVIEW — every logged-in character's queue at a glance + calendar reminders
+// ════════════════════════════════════════════════════════════════
+const TRAIN = {
+  q: new Map(),        // charId -> { queue, at, err }
+  loading: null,
+  WARN_HOURS: 24,
+  // status of a skill queue: { kind: 'lapsed'|'paused'|'low'|'ok', end, cur }
+  status(queue) {
+    const now = Date.now();
+    const live = (queue || []).filter(x => !x.finish_date || Date.parse(x.finish_date) > now).sort((a, b) => a.queue_position - b.queue_position);
+    if (!live.length) return { kind: 'lapsed' };
+    if (!live[0].start_date || !live[0].finish_date) return { kind: 'paused', cur: live[0], count: live.length };
+    const last = live[live.length - 1];
+    const end = Date.parse(last.finish_date);
+    return { kind: end - now < this.WARN_HOURS * 3600e3 ? 'low' : 'ok', end, cur: live[0], last, count: live.length };
+  },
+  async loadAll(force) {
+    if (this.loading && !force) return this.loading;
+    const chars = Object.values(SSO.chars());
+    this.loading = (async () => {
+      for (const c of chars) {
+        const have = this.q.get(c.id);
+        if (!force && have && Date.now() - have.at < 5 * 60e3) continue;
+        if (c.needsLogin) { this.q.set(c.id, { queue: [], at: Date.now(), err: 'login expired' }); continue; }
+        try {
+          const tok = await SSO.token(c.id);
+          const queue = await ESI.req(`/characters/${c.id}/skillqueue/`, { token: tok });
+          this.q.set(c.id, { queue, at: Date.now() });
+        } catch (e) { this.q.set(c.id, { queue: [], at: Date.now(), err: e.message }); }
+        this.render(); this.badge();
+      }
+    })().finally(() => { this.loading = null; this.render(); this.badge(); });
+    return this.loading;
+  },
+  worst() {
+    const order = { lapsed: 0, paused: 1, low: 2, ok: 3 };
+    let w = null;
+    for (const c of Object.values(SSO.chars())) {
+      const e = this.q.get(c.id); if (!e || e.err) continue;
+      const s = this.status(e.queue).kind;
+      if (w === null || order[s] < order[w]) w = s;
+    }
+    return w;
+  },
+  badge() {
+    const w = this.worst(), b = $('.tab-btn[data-page=skills]');
+    b.innerHTML = '📚 Skills' + (w === 'lapsed' || w === 'paused' ? ' <span class="red">●</span>' : w === 'low' ? ' <span class="orange">●</span>' : '');
+    b.title = w === 'lapsed' ? 'A character has an empty skill queue' : w === 'paused' ? 'A skill queue is paused' : w === 'low' ? `A skill queue ends within ${this.WARN_HOURS}h` : '';
+  },
+  render() {
+    const box = $('#sk-overview');
+    const chars = Object.values(SSO.chars());
+    if (!chars.length) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    const order = { lapsed: 0, paused: 1, low: 2, ok: 3 };
+    const rows = chars.map(c => ({ c, e: this.q.get(c.id) })).map(r => ({ ...r, s: r.e && !r.e.err ? this.status(r.e.queue) : null }))
+      .sort((a, b) => (a.s ? order[a.s.kind] : -1) - (b.s ? order[b.s.kind] : -1) || (a.s?.end || 0) - (b.s?.end || 0));
+    const anyEnd = rows.some(r => r.s?.end);
+    $('#sk-ov-all').disabled = !anyEnd;
+    $('#sk-ov-list').innerHTML = rows.map(({ c, e, s }) => {
+      let badge, line;
+      if (!e) { badge = '<span class="chip">…</span>'; line = 'Checking…'; }
+      else if (e.err) { badge = '<span class="chip red">!</span>'; line = esc(e.err); }
+      else if (s.kind === 'lapsed') { badge = '<span class="chip red">EMPTY</span>'; line = 'Nothing training — skill queue is empty'; }
+      else if (s.kind === 'paused') { badge = '<span class="chip red">PAUSED</span>'; line = `Paused · next: ${esc(skName(s.cur.skill_id))} ${ROMAN[s.cur.finished_level]}`; }
+      else {
+        badge = `<span class="chip ${s.kind === 'low' ? 'gold' : 'green'}">${fmtDur((s.end - Date.now()) / 1000)}</span>`;
+        line = `Training ${esc(skName(s.cur.skill_id))} ${ROMAN[s.cur.finished_level]} · queue ends ${fmtDateTime(s.end)} UTC`;
+      }
+      return `<div class="ov-row" data-ovchar="${c.id}"><img src="${portrait(c.id, 32)}" alt="">
+        <div class="grow"><div class="nm">${esc(c.name)} ${badge}</div><div class="cls">${line}</div></div>
+        ${s?.end ? `<button class="btn sm ghost" data-cal="${c.id}" title="Add a calendar reminder for when this queue runs out">📅</button>` : ''}</div>`;
+    }).join('');
+    const upd = Math.max(0, ...[...this.q.values()].map(x => x.at));
+    $('#sk-ov-sub').textContent = upd ? `checked ${fmtDateTime(upd).slice(11)} UTC` : '';
+  },
+
+  // ── calendar (.ics) ──
+  icsDate: t => new Date(t).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''),
+  icsText: s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'),
+  event(c, s) {
+    const t = this.icsText, d = this.icsDate;
+    const last = `${skName(s.last.skill_id)} ${ROMAN[s.last.finished_level]}`;
+    return [
+      'BEGIN:VEVENT',
+      `UID:etm-${c.id}-${s.end}@venomknights.github.io`,
+      `DTSTAMP:${d(Date.now())}`,
+      `DTSTART:${d(s.end)}`,
+      `DTEND:${d(s.end + 15 * 60e3)}`,
+      `SUMMARY:${t(`EVE: ${c.name} skill queue runs out`)}`,
+      `DESCRIPTION:${t(`Last skill in queue: ${last}. Log in and add more training. ${PAGE_URL}#skills`)}`,
+      `URL:${PAGE_URL}#skills`,
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT3H', `DESCRIPTION:${t(`${c.name}: skill queue ends in 3 hours`)}`, 'END:VALARM',
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT30M', `DESCRIPTION:${t(`${c.name}: skill queue ends in 30 minutes`)}`, 'END:VALARM',
+      'END:VEVENT',
+    ].join('\r\n');
+  },
+  ics(list) {
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//EVE Tiles Mobile//Training//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      ...list.map(([c, s]) => this.event(c, s)), 'END:VCALENDAR'].join('\r\n') + '\r\n';
+  },
+  download(charIds) {
+    const chars = SSO.chars();
+    const list = charIds.map(id => [chars[id], this.status(this.q.get(id)?.queue)]).filter(([c, s]) => c && s.end && s.end > Date.now());
+    if (!list.length) { flash('Nothing training to set a reminder for.', true); return; }
+    const name = list.length === 1 ? `eve-queue-${list[0][0].name.replace(/[^\w-]+/g, '_')}.ics` : 'eve-skill-queues.ics';
+    Plans.download(name, new Blob([this.ics(list)], { type: 'text/calendar' }));
+    flash(`Open the downloaded file to add ${list.length === 1 ? 'the reminder' : list.length + ' reminders'} to your calendar (alerts 3 h and 30 min before).`);
+  },
+
+  wire() {
+    $('#sk-ov-refresh').onclick = () => this.loadAll(true);
+    $('#sk-ov-all').onclick = () => this.download([...this.q.keys()]);
+    $('#sk-ov-list').onclick = e => {
+      const cal = e.target.closest('[data-cal]');
+      if (cal) { this.download([+cal.dataset.cal]); return; }
+      const r = e.target.closest('[data-ovchar]');
+      if (r) { LS.set(KEYS.skillChar, +r.dataset.ovchar); UI.renderAuth(); Skills.render(); $('#sk-char-row').scrollIntoView({ behavior: 'smooth' }); }
+    };
   },
 };
 
@@ -2154,7 +2400,7 @@ const KMV = {
     const t = Date.parse(km.killmail_time);
     $('#km-body').innerHTML = `
       <div class="km-head"><img class="ship" src="https://images.evetech.net/types/${v.ship_type_id}/render?size=128" alt="">
-        <div><div class="big">${esc(shipName)} <span class="muted" style="font-size:12px;font-weight:normal">${esc(Names.typeClass(v.ship_type_id))}</span></div>
+        <div><div class="big">${esc(shipName)} <span class="muted" style="font-size:12px;font-weight:normal">${esc(Names.typeClass(v.ship_type_id))}</span> <button class="btn sm ghost" data-inf="${v.ship_type_id}" style="vertical-align:middle">🛠 Popular fits</button></div>
           <div>${v.character_id ? pilot(v.character_id) : esc(nm(v.corporation_id))}${v.character_id ? ' · ' + esc(nm(v.corporation_id)) : ''}${v.alliance_id ? ' · ' + esc(nm(v.alliance_id)) : ''}</div>
           <div class="muted">${esc(nm(km.solar_system_id))}${secHTML} · ${fmtDateTime(t)} UTC</div>
           <div><span class="gold">${fmtISK(z?.[1])} ISK</span> · ${fmtNum(v.damage_taken || 0)} damage taken · ${atk.length} attacker${atk.length === 1 ? '' : 's'}${z?.[2] ? ' <span class="tag solo">SOLO</span>' : ''}</div>
@@ -2166,7 +2412,7 @@ const KMV = {
   },
 
   // EFT text (Pyfa / in-game "Import from clipboard")
-  toEFT(km) {
+  toEFT(km, title) {
     const v = km.victim || {}, items = this.flatten(v.items);
     const name = id => Names.typeName(id);
     const block = (lo, hi) => {
@@ -2184,9 +2430,111 @@ const KMV = {
     };
     const sections = [block(11, 18), block(19, 26), block(27, 34), block(92, 99), block(125, 132), stack(87), stack(158), stack(5)];
     const who = v.character_id ? (Names.name(v.character_id) || 'Killmail') : 'Killmail';
-    let out = `[${name(v.ship_type_id)}, ${who} ${km.killmail_id}]\n`;
+    let out = `[${title || `${name(v.ship_type_id)}, ${who} ${km.killmail_id}`}]\n`;
     out += sections.map(s => s.join('\n')).filter((s, i) => s || i < 4).join('\n\n');
     return out.trim() + '\n';
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  POPULAR FITS — most common fits on a hull's recent losses (zKillboard IDs → ESI killmails)
+// ════════════════════════════════════════════════════════════════
+const INF = {
+  cache: new Map(), N: 100, run: 0,
+  FITTED: f => (f >= 11 && f <= 34) || (f >= 92 && f <= 99) || (f >= 125 && f <= 132),
+  // module per fitted slot (ignores loaded charges), as a comparable signature
+  signature(km) {
+    const byFlag = new Map();
+    for (const it of KMV.flatten(km.victim?.items)) if (this.FITTED(it.flag)) { if (!byFlag.has(it.flag)) byFlag.set(it.flag, []); byFlag.get(it.flag).push(it); }
+    const racks = { High: [], Mid: [], Low: [], Rig: [], Subsystem: [] };
+    for (const [flag, g] of byFlag) {
+      const mod = g.slice().sort((a, b) => ((a.quantity_destroyed || 0) + (a.quantity_dropped || 0)) - ((b.quantity_destroyed || 0) + (b.quantity_dropped || 0)))[0];
+      racks[KMV.slotOf(flag)].push(mod.item_type_id);
+    }
+    for (const k in racks) racks[k].sort((a, b) => a - b);
+    return { racks, key: JSON.stringify(racks), empty: !byFlag.size };
+  },
+
+  async show(ship) {
+    const run = ++this.run, dlg = $('#inf-dlg');
+    $('#inf-title').textContent = `Popular fits — ${Names.typeName(ship)}`;
+    $('#inf-body').innerHTML = '<div class="empty">Reading recent losses from zKillboard…</div>';
+    if (!dlg.open) dlg.showModal();
+    let res = this.cache.get(ship);
+    if (!res || Date.now() - res.at > 30 * 60e3) {
+      try { res = await this.build(ship, run); } catch (e) { if (run === this.run) $('#inf-body').innerHTML = `<div class="empty">Couldn't load: ${esc(e.message)}</div>`; return; }
+      if (!res) return;
+      this.cache.set(ship, res);
+    }
+    if (run === this.run) this.render(ship, res);
+  },
+  async build(ship, run) {
+    const data = await ZK.get(`/losses/shipTypeID/${ship}/page/1/`);
+    if (run !== this.run) return null;
+    const list = (Array.isArray(data) ? data : []).filter(k => k.killmail_id && k.zkb?.hash && !k.zkb.npc)
+      .sort((a, b) => b.killmail_id - a.killmail_id).slice(0, this.N);
+    if (!list.length) return { at: Date.now(), clusters: [], n: 0 };
+    const hashes = new Map(list.map(k => [k.killmail_id, k.zkb.hash]));
+    const values = new Map(list.map(k => [k.killmail_id, k.zkb.totalValue || 0]));
+    let i = 0, done = 0;
+    const kms = [];
+    const worker = async () => {
+      while (i < list.length && run === this.run) {
+        const k = list[i++];
+        try {
+          let km = KMV.cache.get(k.killmail_id);
+          if (!km) { km = await ESI.req(`/killmails/${k.killmail_id}/${k.zkb.hash}/`, { retries: 2 }); KMV.cache.set(k.killmail_id, km); }
+          kms.push(km);
+        } catch { }
+        done++;
+        if (done % 5 === 0 && run === this.run) $('#inf-body').innerHTML = `<div class="empty">Downloading killmails ${done} / ${list.length}…</div>`;
+      }
+    };
+    await Promise.all(Array.from({ length: 8 }, worker));
+    if (run !== this.run) return null;
+    const clusters = new Map();
+    for (const km of kms) {
+      if (km.victim?.ship_type_id !== ship) continue;
+      const sig = this.signature(km); if (sig.empty) continue;
+      let c = clusters.get(sig.key); if (!c) clusters.set(sig.key, c = { racks: sig.racks, kms: [], isk: 0 });
+      c.kms.push(km); c.isk += values.get(km.killmail_id) || 0;
+    }
+    const top = [...clusters.values()].sort((a, b) => b.kms.length - a.kms.length).slice(0, 5);
+    for (const c of top) c.kms.sort((a, b) => b.killmail_id - a.killmail_id);
+    const ids = top.flatMap(c => [...Object.values(c.racks).flat(), ...c.kms.slice(0, 1).flatMap(k => KMV.flatten(k.victim.items).map(x => x.item_type_id))]);
+    await Names.load(ids);
+    return { at: Date.now(), clusters: top, n: kms.filter(k => k.victim?.ship_type_id === ship).length, hashes: Object.fromEntries(hashes) };
+  },
+  render(ship, res) {
+    this.last = { ship, res };
+    if (!res.clusters.length) { $('#inf-body').innerHTML = '<div class="empty">No recent player-killed losses of this hull on zKillboard.</div>'; return; }
+    const count = list => { const m = new Map(); for (const t of list) m.set(t, (m.get(t) || 0) + 1); return [...m.entries()]; };
+    $('#inf-body').innerHTML = `<div class="cls muted" style="margin-bottom:8px">From the ${res.n} most recent ${esc(Names.typeName(ship))} losses to players on zKillboard (fits that die often, not necessarily the best fits). Exact module matches; loaded ammo is ignored.</div>`
+      + res.clusters.map((c, i) => {
+        const pct = Math.round(c.kms.length / res.n * 100);
+        const racks = ['High', 'Mid', 'Low', 'Rig', 'Subsystem'].filter(r => c.racks[r].length).map(r =>
+          `<div class="slot-hdr">${r}</div>` + count(c.racks[r]).map(([t, n]) => `<div class="fit-row"><img src="${typeIcon(t)}" alt="" loading="lazy"><div>${n > 1 ? n + '× ' : ''}${esc(Names.typeName(t))}</div><div></div></div>`).join('')).join('');
+        return `<div class="card" style="margin-bottom:10px"><div class="label-row"><span class="title">#${i + 1} · ${c.kms.length} of ${res.n} losses (${pct}%)</span><span class="sub">avg ${fmtISK(c.isk / c.kms.length)} ISK</span></div>
+          ${racks}
+          <div class="row" style="margin-top:8px"><button class="btn sm gold" data-infsave="${i}">★ Save fit</button><button class="btn sm ghost" data-infcopy="${i}">⧉ Copy</button><button class="btn sm ghost" data-infkm="${i}">☠ Example killmail</button></div></div>`;
+      }).join('');
+  },
+  eftFor(i) {
+    const { ship, res } = this.last, c = res.clusters[i], km = c.kms[0];
+    return KMV.toEFT(km, `${Names.typeName(ship)}, Popular #${i + 1}`);
+  },
+  wire() {
+    $('#inf-close').onclick = () => { this.run++; $('#inf-dlg').close(); };
+    $('#inf-body').onclick = e => {
+      const b = e.target.closest('button'); if (!b || !this.last) return;
+      if (b.dataset.infsave !== undefined) {
+        const i = +b.dataset.infsave, km = this.last.res.clusters[i].kms[0];
+        FITS.openEditor({ eft: this.eftFor(i), name: `${Names.typeName(this.last.ship)} — popular #${i + 1}`, src: { km: km.killmail_id, hash: this.last.res.hashes[km.killmail_id] } });
+      }
+      if (b.dataset.infcopy !== undefined) navigator.clipboard.writeText(this.eftFor(+b.dataset.infcopy)).then(() => flash('Fit copied.'), () => flash('Clipboard blocked by the browser.', true));
+      if (b.dataset.infkm !== undefined) { const km = this.last.res.clusters[+b.dataset.infkm].kms[0]; KMV.show(km.killmail_id, this.last.res.hashes[km.killmail_id]); }
+    };
+    document.addEventListener('click', e => { const b = e.target.closest('[data-inf]'); if (b) { e.stopPropagation(); INF.show(+b.dataset.inf); } }, true);
   },
 };
 
@@ -2424,6 +2772,14 @@ const FITS = {
       if (card) { this.open = this.open === card.dataset.fid ? null : card.dataset.fid; this.render(); }
     };
     $('#fit-paste').onclick = () => this.openEditor();
+    $('#fit-popular').onclick = () => {
+      if (!$('#pop-ships').children.length) $('#pop-ships').innerHTML = Object.values(SDE.ships).map(s => s[0]).sort().map(n => `<option value="${esc(n)}">`).join('');
+      $('#pop-ship').value = ''; $('#pop-dlg').showModal(); $('#pop-ship').focus();
+    };
+    $('#pop-cancel').onclick = () => $('#pop-dlg').close();
+    const goPop = () => { const id = this.shipByName($('#pop-ship').value); if (!id) { flash('Pick a ship from the list.', true); return; } $('#pop-dlg').close(); INF.show(id); };
+    $('#pop-go').onclick = goPop;
+    $('#pop-ship').onkeydown = e => { if (e.key === 'Enter') goPop(); };
     $('#fit-eft').oninput = () => this.updateEditorShip();
     $('#fit-dlg-tags').onclick = e => {
       if (e.target.id !== 'fit-newtag-add') return;
@@ -2838,13 +3194,48 @@ const CS = {
     this.resolveIds();
   },
 
+  // "A, B, C; D, x, x" (commas = same account, semicolon = next account, x/blank = empty slot)
+  // or the older one-per-line format with blank lines between accounts. Returns [{ label, names, empty }].
+  parseBulk(text) {
+    let t = text.replace(/\r/g, '');
+    const spoken = /\b(semi ?colon|comma|next account)\b/i.test(t);
+    if (spoken) t = t.replace(/\bsemi ?colon\b/gi, ';').replace(/\bnext account\b/gi, ';').replace(/\bcomma\b/gi, ',');
+    const EMPTY = /^(x+|-+|blank|empty|none|nobody|open|slot)$/i;
+    const clean = n => n.trim().replace(/^[.,;:!?"'\s]+|[.,;:!?"'\s]+$/g, '').replace(/\s+/g, ' ');
+    const out = [];
+    if (/[;,]/.test(t)) {
+      for (const acct of t.split(/[;\n]+/)) {
+        let label = null, names = [], empty = 0;
+        acct.split(',').forEach((raw, i) => {
+          let n = clean(raw);
+          if (i === 0 && n.startsWith('#')) { label = n.replace(/^#+\s*/, ''); return; }
+          if (!n || EMPTY.test(n)) { if (acct.trim()) empty++; return; }
+          names.push(n);
+        });
+        if (names.length) out.push({ label, names, empty });
+      }
+      return out;
+    }
+    for (const b of t.split(/\n\s*\n/)) {
+      const lines = b.split('\n').map(clean).filter(Boolean);
+      let label = null;
+      if (lines[0]?.startsWith('#')) label = lines.shift().replace(/^#+\s*/, '');
+      const names = lines.filter(n => !EMPTY.test(n));
+      if (names.length) out.push({ label, names, empty: lines.length - names.length });
+    }
+    return out;
+  },
+  renderBulkPreview() {
+    const blocks = this.parseBulk($('#cs-bulk').value);
+    $('#cs-bulk-preview').innerHTML = blocks.length ? blocks.map((b, i) => `<div>${esc(b.label || `New account ${i + 1}`)}: <b>★ ${esc(b.names[0])}</b>${b.names.slice(1).map(n => ', ' + esc(n)).join('')}${b.empty ? ` <span class="muted">(${b.empty} empty)</span>` : ''}</div>`).join('') : '';
+  },
+
   bulkAdd() {
     const d = this.data(), gid = $('#cs-bulk-group').value;
-    const blocks = $('#cs-bulk').value.split(/\n\s*\n/).map(b => b.split('\n').map(x => x.trim()).filter(Boolean)).filter(b => b.length);
+    const blocks = this.parseBulk($('#cs-bulk').value);
     let added = 0, dup = [];
-    for (const b of blocks) {
-      let label = null;
-      if (b[0].startsWith('#')) label = b.shift().replace(/^#+\s*/, '').trim();
+    for (const blk of blocks) {
+      const b = blk.names.slice(), label = blk.label;
       if (!b.length) continue;
       const acct = label || this.nextAccountName(d);
       const hadMain = d.chars.some(c => c.account === acct && c.main);
@@ -2855,7 +3246,7 @@ const CS = {
       });
     }
     this.save(d);
-    $('#cs-bulk').value = '';
+    $('#cs-bulk').value = ''; this.renderBulkPreview();
     flash(`Added ${added} character${added === 1 ? '' : 's'}${dup.length ? ` · skipped ${dup.length} already listed` : ''}.`);
     this.render(); this.resolveIds();
   },
@@ -2907,15 +3298,19 @@ const CS = {
   async resolveIds() {
     const d = this.data(); const todo = d.chars.filter(c => c.eveId === undefined || c.eveId === null);
     if (!todo.length) return;
-    const found = new Map();
+    const found = new Map(), foundNames = new Map();
     try {
       for (let i = 0; i < todo.length; i += 400) {
         const res = await ESI.req('/universe/ids/', { method: 'POST', body: todo.slice(i, i + 400).map(c => c.name), retries: 2 });
-        for (const ch of res?.characters || []) found.set(ch.name.toLowerCase(), ch.id);
+        for (const ch of res?.characters || []) { found.set(ch.name.toLowerCase(), ch.id); foundNames.set(ch.name.toLowerCase(), ch.name); }
       }
     } catch (e) { console.warn('ID lookup failed', e); return; }
     const d2 = this.data();
-    for (const c of d2.chars) if ((c.eveId === undefined || c.eveId === null) && todo.some(t => t.id === c.id)) c.eveId = found.get(c.name.toLowerCase()) || 0;
+    const canon = new Map(); for (const [k, id] of found) canon.set(k, id);
+    for (const c of d2.chars) if ((c.eveId === undefined || c.eveId === null) && todo.some(t => t.id === c.id)) {
+      c.eveId = found.get(c.name.toLowerCase()) || 0;
+      if (c.eveId && foundNames.get(c.name.toLowerCase())) c.name = foundNames.get(c.name.toLowerCase()); // EVE's exact spelling/capitals
+    }
     this.save(d2);
     if (UI.page === 'charsets') this.render();
   },
@@ -3061,6 +3456,7 @@ const CS = {
       d.chars = d.chars.filter(x => x !== c); this.save(d); this.editId = null; this.pick.delete(c.id); this.render();
     };
     $('#cs-bulk-add').onclick = () => this.bulkAdd();
+    $('#cs-bulk').oninput = () => this.renderBulkPreview();
     $('#cs-g-new').onclick = () => { this.editGid = null; this.render(); $('#cs-g-name').focus(); };
     $('#cs-g-list').onclick = e => { const r = e.target.closest('[data-gid]'); if (!r) return; this.editGid = r.dataset.gid; this.render(); };
     $('#cs-g-save').onclick = () => this.saveGroup();
@@ -3085,11 +3481,12 @@ const CS = {
 const UI = {
   page: 'kb',
   show(page) {
+    if (page === 'killed') { page = 'ships'; this.setShipsMode('killed'); } // old link
     if (!$('#page-' + page)) page = 'kb';
     this.page = page;
     $$('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
     $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
-    $('#charbar').classList.toggle('show', ['kb', 'killed', 'ships'].includes(page));
+    $('#charbar').classList.toggle('show', ['kb', 'ships', 'habits'].includes(page));
     const ui = LS.get(KEYS.ui, {}); ui.page = page; LS.set(KEYS.ui, ui);
     if (location.hash !== '#' + page) history.replaceState(null, '', '#' + page);
     if (page === 'skills') Skills.render();
@@ -3098,6 +3495,7 @@ const UI = {
     else if (page === 'fits') FITS.render();
     else KB.renderAll();
   },
+  setShipsMode(v) { $$('#ships-mode button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); },
   renderAuth() {
     const chars = Object.values(SSO.chars());
     const btn = $('#auth-btn');
@@ -3199,14 +3597,13 @@ function wire() {
 
   // analysis pages
   const segs = (id, fn) => $(id).onclick = e => { const b = e.target.closest('button'); if (!b) return; $$(id + ' button').forEach(x => x.classList.toggle('on', x === b)); fn(); };
-  segs('#killed-mode', () => KB.renderKilled());
-  segs('#ships-mode', () => { KB.open.ships = null; KB.renderShips(); });
-  for (const pg of ['killed', 'ships']) {
+  segs('#ships-mode', () => { KB.open.ships = null; const ui = LS.get(KEYS.ui, {}); ui.shipsMode = $('#ships-mode .on').dataset.v; LS.set(KEYS.ui, ui); KB.renderShips(); });
+  segs('#ships-group', () => KB.renderShips());
+  segs('#hab-tz', () => KB.renderHabits());
+  for (const pg of ['ships', 'habits']) {
     $$(`#page-${pg} .f-period, #page-${pg} .f-pods, #page-${pg} .f-solo`).forEach(el => el.onchange = () => KB.renderAll());
   }
-  $('#killed-search').oninput = () => KB.renderKilled();
   $('#ships-search').oninput = () => KB.renderShips();
-  $('#killed-list').onclick = e => { const k = e.target.closest('[data-kml]'); if (k) { KB.showKml(k.dataset.kml, 'killed'); return; } const r = e.target.closest('.lrow'); if (!r) return; const t = +r.dataset.type; KB.open.killed = KB.open.killed === t ? null : t; KB.renderKilled(); };
   $('#ships-list').onclick = e => { const k = e.target.closest('[data-kml]'); if (k) { KB.showKml(k.dataset.kml, 'ships'); return; } const r = e.target.closest('.lrow'); if (!r) return; const t = +r.dataset.type; KB.open.ships = KB.open.ships === t ? null : t; KB.renderShips(); };
 
   // skills
@@ -3293,6 +3690,7 @@ function wire() {
   };
 
   CS.wire();
+  INF.wire();
   // backup / restore
   const BK_KEYS = ['settings', 'tracked', 'kbSelected', 'plans', 'activePlan', 'ui', 'charsets', 'fits', 'skillChar'];
   $('#bk-btn').onclick = () => { $('#bk-file').value = ''; $('#bk-dlg').showModal(); };
@@ -3313,7 +3711,8 @@ function wire() {
   };
   FITS.wire();
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== UI.page) UI.show(h); });
-  setInterval(() => { if (UI.page === 'skills') Skills.renderQueue(); }, 30000);
+  setInterval(() => { if (UI.page === 'skills') { Skills.renderQueue(); TRAIN.render(); } TRAIN.badge(); }, 30000);
+  TRAIN.wire();
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -3334,6 +3733,7 @@ function wire() {
   } catch (e) { startPage = 'skills'; setTimeout(() => setStatus('skills-status', e.message, true), 0); }
 
   UI.renderAuth();
+  UI.setShipsMode(LS.get(KEYS.ui, {}).shipsMode || 'killed');
   const sel = LS.get(KEYS.kbSelected, null);
   const t = KB.tracked();
   KB.renderSelector();
@@ -3341,6 +3741,7 @@ function wire() {
   const first = t.find(x => x.id === sel) || t.find(x => x.star) || t[0];
   if (first) KB.select(first.id ?? 'n:' + first.name);
   // Keep tracked (★) pilots up to date in the background.
+  if (Object.keys(SSO.chars()).length) setTimeout(() => TRAIN.loadAll(), 1500); // red/orange dot on Skills if a queue lapsed or ends soon
   setTimeout(async () => { for (const c of KB.tracked().filter(x => x.star && x.id && x.id !== KB.charId)) await Sync.run(c.id, { full: true }); }, 4000);
 })();
 </script>
