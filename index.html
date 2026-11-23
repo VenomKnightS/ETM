@@ -1,0 +1,2700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVE Tiles Mobile — venomknights</title>
+<style>
+  :root {
+    --bg:#0a0e14; --panel:#0f1520; --hdr:#131c2a; --border:#1e3050; --gold:#c8a84b; --teal:#40c8c8;
+    --dim:#6a7888; --text:#c8d8e8; --green:#60c060; --red:#d04040; --blue:#4090d0; --purple:#9060c0;
+    --orange:#d07030; --radius:6px; --font:'Segoe UI', Arial, sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:13px; min-height:100vh; }
+  a { color:var(--blue); }
+  button { font:inherit; }
+  input, select, textarea { font:inherit; background:var(--hdr); border:1px solid var(--border); color:var(--text); border-radius:var(--radius); padding:6px 9px; outline:none; }
+  input:focus, select:focus, textarea:focus { border-color:var(--teal); }
+
+  #nav { display:flex; align-items:center; background:var(--hdr); border-bottom:1px solid var(--border); padding:0 12px; height:44px; gap:2px; position:sticky; top:0; z-index:20; }
+  #nav .logo { color:var(--gold); font-weight:bold; font-size:15px; letter-spacing:1px; margin-right:10px; white-space:nowrap; }
+  #tabs { display:flex; overflow-x:auto; scrollbar-width:none; flex:1; min-width:0; }
+  #tabs::-webkit-scrollbar { display:none; }
+  .tab-btn { background:none; border:none; color:var(--dim); font-size:13px; padding:0 12px; height:44px; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
+  .tab-btn:hover { color:var(--text); }
+  .tab-btn.active { color:var(--teal); border-bottom-color:var(--teal); }
+  #auth-wrap { position:relative; margin-left:8px; }
+  #auth-btn { background:#1a2f1a; border:1px solid #3a6a3a; color:#80d080; font-size:12px; padding:5px 10px; border-radius:var(--radius); cursor:pointer; white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis; }
+  #auth-btn.linked { background:#1a2a3a; border-color:#3a6a9a; color:var(--teal); }
+  @media (max-width:600px) { #nav .logo { display:none; } #auth-btn { max-width:120px; } .tab-btn { padding:0 9px; } }
+  #auth-menu { display:none; position:absolute; right:0; top:36px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); min-width:250px; z-index:30; box-shadow:0 6px 20px #0008; }
+  #auth-menu.open { display:block; }
+  .menu-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid #0d1824; }
+  .menu-item img { width:28px; height:28px; border-radius:3px; }
+  .menu-item .grow { flex:1; min-width:0; }
+  .menu-item .nm { color:var(--gold); }
+  .menu-item .sub { color:var(--dim); font-size:11px; }
+
+  .page { display:none; padding:14px; max-width:1100px; margin:0 auto; }
+  .page.active { display:block; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; margin-bottom:12px; }
+  .card-title, .label-row .title { color:var(--gold); font-size:11px; font-weight:bold; letter-spacing:1px; text-transform:uppercase; }
+  .card-title { margin-bottom:10px; }
+  .label-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; gap:8px; flex-wrap:wrap; }
+  .label-row .sub { color:var(--dim); font-size:11px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; min-width:0; }
+  .btn { background:#0f2535; border:1px solid var(--blue); color:var(--blue); padding:6px 12px; border-radius:var(--radius); cursor:pointer; white-space:nowrap; }
+  .btn:hover { background:#163045; }
+  .btn:disabled { opacity:.45; cursor:default; }
+  .btn.sm { padding:3px 8px; font-size:11px; }
+  .btn.ghost { border-color:var(--border); color:var(--dim); background:none; }
+  .btn.ghost:hover { color:var(--text); }
+  .btn.green { border-color:#3a6a3a; color:#80d080; background:#1a2f1a; }
+  .btn.red { border-color:#6a2a2a; color:#e07070; background:#2a1414; }
+  .btn.gold { border-color:#6a5a2a; color:var(--gold); background:#241f10; }
+  .chip { display:inline-block; font-size:10px; padding:1px 6px; border-radius:3px; border:1px solid var(--border); color:var(--dim); }
+  .chip.teal { color:var(--teal); border-color:#2a5a5a; }
+  .chip.gold { color:var(--gold); border-color:#5a4a20; }
+  .chip.red { color:#e07070; border-color:#5a2a2a; }
+  .chip.green { color:var(--green); border-color:#2a5a2a; }
+  .status-line { color:var(--dim); font-size:12px; min-height:18px; margin:4px 0 8px; }
+  .status-line.err { color:var(--red); }
+  .muted { color:var(--dim); }
+  .empty { color:var(--dim); padding:10px 4px; }
+  .sso-info { background:#0d1a26; border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; line-height:1.6; }
+  code { color:var(--teal); word-break:break-all; }
+
+  /* char bar */
+  #charbar { display:none; background:#0c121b; border-bottom:1px solid var(--border); padding:8px 14px; }
+  #charbar.show { display:block; }
+  #charbar .inner { max-width:1100px; margin:0 auto; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  #kb-char { min-width:180px; max-width:260px; }
+  #kb-add { width:170px; }
+  #sync-info { color:var(--dim); font-size:11px; flex-basis:100%; }
+  .progress { height:4px; background:#1a2535; border-radius:2px; overflow:hidden; margin-top:4px; }
+  .progress > div { height:100%; background:var(--teal); width:0; transition:width .3s; }
+
+  .char-header { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+  .char-portrait { width:64px; height:64px; border-radius:var(--radius); border:1px solid var(--border); }
+  .char-name { color:var(--gold); font-size:18px; font-weight:bold; }
+  .char-corp { color:var(--dim); font-size:12px; }
+
+  .stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; }
+  .stat-box { background:var(--hdr); border:1px solid var(--border); border-radius:var(--radius); padding:8px 10px; }
+  .stat-label { color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
+  .stat-val { font-size:18px; font-weight:bold; }
+  .green { color:var(--green); } .red { color:var(--red); } .teal { color:var(--teal); } .gold { color:var(--gold); } .purple { color:var(--purple); } .orange { color:var(--orange); }
+
+  .filter-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .filter-row label { color:var(--dim); font-size:11px; }
+  .seg { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .seg button { background:none; border:none; color:var(--dim); padding:5px 12px; cursor:pointer; }
+  .seg button.on { background:#14324a; color:var(--teal); }
+
+  /* ship lists */
+  .list { max-height:65vh; overflow-y:auto; border:1px solid #0d1824; border-radius:var(--radius); }
+  .lrow { display:grid; grid-template-columns:32px 1fr auto; gap:10px; align-items:center; padding:6px 10px; border-bottom:1px solid #0d1824; cursor:pointer; }
+  .lrow:hover { background:#111b29; }
+  .lrow.open { background:#122033; }
+  .lrow img { width:32px; height:32px; border-radius:3px; background:#000; }
+  .lrow .nm { font-size:13px; }
+  .lrow .cls { color:var(--dim); font-size:11px; }
+  .lrow .nums { text-align:right; white-space:nowrap; }
+  .lrow .big { font-weight:bold; font-size:15px; }
+  .bar { height:4px; background:#1a2535; border-radius:2px; margin-top:4px; overflow:hidden; display:flex; }
+  .bar .k { background:var(--green); height:100%; }
+  .bar .l { background:var(--red); height:100%; }
+  .group-hdr { background:var(--hdr); color:var(--gold); font-size:11px; letter-spacing:.5px; text-transform:uppercase; padding:6px 10px; position:sticky; top:0; z-index:1; display:flex; justify-content:space-between; }
+  .drill { background:#0b1520; border-bottom:1px solid var(--border); padding:8px 12px 10px 52px; }
+  .drill h4 { color:var(--gold); font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin:6px 0 4px; font-weight:bold; }
+  .drill .dl { display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:center; padding:2px 0; }
+  .drill .dl img { width:22px; height:22px; border-radius:2px; }
+  .drill .cnt { font-weight:bold; }
+  .drill-cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:640px){ .drill-cols { grid-template-columns:1fr; } .drill { padding-left:12px; } }
+
+  /* feed */
+  .kill-row { display:grid; grid-template-columns:10px 34px 1fr auto; gap:8px; align-items:center; padding:6px 4px; border-bottom:1px solid #0d1824; }
+  .kill-row img { width:34px; height:34px; border-radius:3px; }
+  .kill-dot { width:8px; height:8px; border-radius:50%; }
+  .kill-dot.win { background:var(--green); } .kill-dot.loss { background:var(--red); }
+  .kill-main { min-width:0; }
+  .kill-main .l1 { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .kill-main .l2 { color:var(--dim); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .kill-side { text-align:right; font-size:11px; color:var(--dim); white-space:nowrap; }
+  .kill-side .isk { color:var(--gold); font-size:12px; }
+  .pilot { color:var(--teal); cursor:pointer; }
+  .pilot:hover { text-decoration:underline; }
+  .tag { font-size:9px; padding:0 4px; border-radius:2px; margin-left:4px; }
+  .tag.solo { background:#2a1f40; color:#b090e0; } .tag.npc { background:#2a2a2a; color:#999; }
+  #page-num-row { display:flex; gap:8px; align-items:center; margin-top:10px; }
+
+  /* skills */
+  .queue-row { display:grid; grid-template-columns:26px 1fr 40px 100px; gap:8px; padding:5px 8px; border-bottom:1px solid #0d1824; align-items:center; }
+  .q-current { background:#0f2020; }
+  .q-pos { color:var(--dim); }
+  .q-finish { color:var(--dim); text-align:right; font-size:11px; }
+  .skill-group { margin-bottom:10px; }
+  .skill-group-name { color:var(--gold); font-weight:bold; padding:4px 0; border-bottom:1px solid var(--border); margin-bottom:4px; }
+  .skill-row { display:grid; grid-template-columns:1fr 90px 80px; gap:8px; padding:3px 6px; align-items:center; }
+  .skill-row:hover { background:#111b29; }
+  .pips { display:flex; gap:3px; }
+  .pip { width:12px; height:8px; border:1px solid #2a4060; border-radius:1px; }
+  .pip.trained { background:var(--teal); border-color:var(--teal); }
+  .pip.active { background:#1f5a5a; }
+  .skill-sp { color:var(--dim); font-size:11px; text-align:right; }
+  .attr-row { display:flex; gap:12px; flex-wrap:wrap; color:var(--dim); font-size:12px; }
+  .attr-row b { color:var(--text); }
+
+  /* plans */
+  .plan-layout { display:grid; grid-template-columns:260px 1fr; gap:12px; align-items:start; }
+  @media (max-width:820px){ .plan-layout { grid-template-columns:1fr; } }
+  .plan-item { padding:7px 9px; border-radius:var(--radius); cursor:pointer; border:1px solid transparent; }
+  .plan-item:hover { background:#111b29; }
+  .plan-item.on { border-color:var(--teal); background:#0f2020; }
+  .plan-item .sub { color:var(--dim); font-size:11px; }
+  .pl-hdr { color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:.5px; margin:10px 0 4px; }
+  .pe-row { display:grid; grid-template-columns:28px 1fr 74px 92px 64px; gap:6px; align-items:center; padding:4px 6px; border-bottom:1px solid #0d1824; }
+  .pe-row.done { opacity:.45; }
+  .pe-row .nm small { color:var(--dim); }
+  .pe-row .tm { text-align:right; font-size:11px; color:var(--dim); }
+  .pe-row .acts { display:flex; gap:2px; justify-content:flex-end; }
+  .pe-row .acts button { background:none; border:1px solid var(--border); color:var(--dim); width:20px; height:20px; border-radius:3px; cursor:pointer; font-size:11px; line-height:1; }
+  .pe-row .acts button:hover { color:var(--text); border-color:var(--teal); }
+  @media (max-width:560px){ .pe-row { grid-template-columns:24px 1fr 64px; } .pe-row .tm.fin { display:none; } .pe-row .acts { grid-column:2 / span 2; justify-content:flex-start; } }
+  .ta-wrap { position:relative; }
+  .ta-results { position:absolute; left:0; right:0; top:100%; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); max-height:300px; overflow-y:auto; z-index:15; display:none; }
+  .ta-results.open { display:block; }
+  .ta-item { padding:6px 9px; cursor:pointer; border-bottom:1px solid #0d1824; display:flex; align-items:center; gap:8px; }
+  .ta-item:hover, .ta-item.hl { background:#14324a; }
+  .ta-item .sub { color:var(--dim); font-size:11px; }
+  .lvl-btns button { background:#0f2535; border:1px solid var(--border); color:var(--text); width:30px; height:24px; border-radius:3px; cursor:pointer; margin-left:2px; }
+  .lvl-btns button:hover { border-color:var(--teal); color:var(--teal); }
+  .lvl-btns button.have { opacity:.35; }
+  textarea { width:100%; min-height:120px; resize:vertical; }
+  .flash { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:#14324a; border:1px solid var(--teal); color:var(--text); padding:9px 14px; border-radius:var(--radius); z-index:50; max-width:90vw; box-shadow:0 6px 20px #0009; display:none; }
+  .flash.err { background:#2a1414; border-color:var(--red); }
+  dialog { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:16px; max-width:640px; width:92vw; margin:auto; }
+  dialog::backdrop { background:#000a; }
+  /* char sets */
+  .plates { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:8px; }
+  .acct-hdr { color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:.5px; margin:12px 0 5px; display:flex; gap:8px; align-items:center; }
+  .acct-hdr .warn { color:var(--orange); text-transform:none; letter-spacing:0; }
+  .plate { display:flex; gap:8px; align-items:center; padding:7px 9px; border-radius:var(--radius); border:1px solid #ffffff22; min-height:50px; position:relative; }
+  .plate img { width:36px; height:36px; border-radius:4px; background:#0006; flex:none; cursor:pointer; }
+  .plate .pn { font-weight:bold; font-size:14px; }
+  .plate .pm { font-size:10px; opacity:.8; }
+  .plate .ptags { display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; }
+  .plate .ptag { font-size:9px; padding:0 5px; border-radius:2px; background:#0005; color:#fff; }
+  .plate .ptag.bad { background:#5a0000cc; }
+  .plate.dim { opacity:.55; }
+  .plate input[type=checkbox] { width:16px; height:16px; flex:none; }
+  .plate .why { font-size:10px; margin-top:2px; background:#000a; color:#ffb0a0; padding:1px 5px; border-radius:2px; display:inline-block; }
+  .sect-hdr { color:var(--gold); font-size:11px; font-weight:bold; letter-spacing:1px; text-transform:uppercase; margin:16px 0 4px; }
+  .cs-form { display:grid; grid-template-columns:110px 1fr; gap:8px 10px; align-items:center; }
+  .cs-form > label { color:var(--dim); font-size:12px; }
+  @media (max-width:560px){ .cs-form { grid-template-columns:1fr; } }
+  .checks { display:flex; flex-wrap:wrap; gap:6px; }
+  .checks label { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border:1px solid var(--border); border-radius:12px; cursor:pointer; font-size:12px; }
+  .checks label.off { opacity:.4; cursor:not-allowed; }
+  .checks label .dot { width:9px; height:9px; border-radius:50%; }
+  .cs-list-row { display:flex; gap:8px; align-items:center; padding:4px 6px; border-bottom:1px solid #0d1824; cursor:pointer; }
+  .cs-list-row:hover { background:#111b29; }
+  .cs-list-row .sw { width:14px; height:14px; border-radius:3px; flex:none; border:1px solid #fff3; }
+  .cs-list-row.on { background:#0f2020; }
+  #cs-pickbar { position:sticky; bottom:0; background:#0f1a28; border:1px solid var(--teal); border-radius:var(--radius); padding:8px 12px; margin-top:10px; display:none; }
+  input[type=color] { padding:0; width:44px; height:30px; }
+
+</style>
+</head>
+<body>
+
+<div id="nav">
+  <span class="logo">⚡ EVE TILES</span>
+  <div id="tabs">
+    <button class="tab-btn" data-page="kb">☠ Killboard</button>
+    <button class="tab-btn" data-page="killed">🎯 Kills by Type</button>
+    <button class="tab-btn" data-page="ships">🚀 My Ships</button>
+    <button class="tab-btn" data-page="skills">📚 Skills</button>
+    <button class="tab-btn" data-page="plans">🗺 Plans</button>
+    <button class="tab-btn" data-page="charsets">👥 Char Sets</button>
+  </div>
+  <div id="auth-wrap">
+    <button id="auth-btn">🔑 Log in with EVE</button>
+    <div id="auth-menu"></div>
+  </div>
+</div>
+
+<!-- Character selector shared by the killboard tabs -->
+<div id="charbar">
+  <div class="inner">
+    <select id="kb-char" title="Character"></select>
+    <button class="btn sm ghost" id="kb-star" title="Tracked characters sync their full history automatically">☆ Track</button>
+    <span class="grow"></span>
+    <input id="kb-add" type="text" placeholder="Look up pilot…">
+    <button class="btn sm" id="kb-add-btn">Look up</button>
+    <button class="btn sm green" id="kb-sync">⟳ Sync</button>
+    <button class="btn sm ghost" id="kb-remove" title="Remove from this list">✕</button>
+    <div id="sync-info"><span id="sync-text"></span><div class="progress"><div id="sync-bar"></div></div></div>
+  </div>
+</div>
+
+<!-- ══════════ KILLBOARD ══════════ -->
+<div id="page-kb" class="page">
+  <div id="kb-empty" class="sso-info">Look up a pilot by name above. Pilots you mark <b>★ Tracked</b> keep their full kill history cached in this browser and sync new kills automatically.</div>
+  <div id="kb-body" style="display:none">
+    <div id="kb-header" class="char-header"></div>
+    <div class="card">
+      <div class="label-row"><span class="title">zKillboard — all time</span><span class="sub" id="kb-zk-link"></span></div>
+      <div class="stat-grid" id="kb-stats"></div>
+    </div>
+    <div class="card">
+      <div class="label-row"><span class="title">Recent activity</span><span class="sub" id="feed-info"></span></div>
+      <div class="filter-row">
+        <select id="feed-type">
+          <option value="all">All</option><option value="kill">Kills</option><option value="loss">Losses</option><option value="solo">Solo kills</option>
+        </select>
+        <input id="feed-ship" type="text" placeholder="filter by ship…" style="width:150px">
+      </div>
+      <div id="kill-feed"></div>
+      <div id="page-num-row">
+        <button class="btn sm ghost" id="feed-prev">◀ Prev</button>
+        <span id="feed-page" class="muted"></span>
+        <button class="btn sm ghost" id="feed-next">Next ▶</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ KILLS BY TYPE ══════════ -->
+<div id="page-killed" class="page">
+  <div class="card">
+    <div class="label-row"><span class="title">Ships killed, by type</span><span class="sub" id="killed-sum"></span></div>
+    <div class="filter-row">
+      <select class="f-period"><option value="0">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
+      <label><input type="checkbox" class="f-pods"> Hide capsules</label>
+      <label><input type="checkbox" class="f-solo"> Solo only</label>
+      <span class="seg" id="killed-mode"><button data-v="flat" class="on">By ship</button><button data-v="group">By class</button></span>
+      <input id="killed-search" type="text" placeholder="search…" style="width:130px">
+    </div>
+    <div id="killed-list" class="list"></div>
+    <div class="muted" style="font-size:11px;margin-top:6px">Tap a ship to see which of your ships killed it.</div>
+  </div>
+</div>
+
+<!-- ══════════ MY SHIPS ══════════ -->
+<div id="page-ships" class="page">
+  <div class="card">
+    <div class="label-row"><span class="title">My ships — kills &amp; deaths</span><span class="sub" id="ships-sum"></span></div>
+    <div class="filter-row">
+      <span class="seg" id="ships-mode"><button data-v="kills" class="on">Kills with</button><button data-v="deaths">Deaths in</button></span>
+      <select class="f-period"><option value="0">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
+      <label><input type="checkbox" class="f-pods"> Hide capsules</label>
+      <input id="ships-search" type="text" placeholder="search…" style="width:130px">
+    </div>
+    <div id="ships-list" class="list"></div>
+    <div class="muted" style="font-size:11px;margin-top:6px">Tap a ship to see what it killed and what it died to.</div>
+  </div>
+</div>
+
+<!-- ══════════ SKILLS ══════════ -->
+<div id="page-skills" class="page">
+  <div id="sso-setup" class="sso-info" style="margin-bottom:12px;display:none">
+    <b>Log in with EVE Online</b> to see your skill queue and trained skills and to plan against your real skills. This uses EVE's official login (OAuth2 with PKCE): your password never touches this page, and logins are stored only in <b>this browser</b>. You stay logged in until you log out or revoke access.
+    <ol style="margin:8px 0 0 18px;line-height:1.9">
+      <li>Go to <a href="https://developers.eveonline.com/" target="_blank" rel="noopener">developers.eveonline.com</a> → Create Application</li>
+      <li>Connection type: <b>Authentication &amp; API Access</b></li>
+      <li>Scopes: <code>esi-skills.read_skills.v1 esi-skills.read_skillqueue.v1 esi-clones.read_implants.v1</code></li>
+      <li>Callback URL: <code id="callback-url">…</code> <button class="btn sm ghost" id="copy-cb">copy</button></li>
+      <li>Paste the Client ID below, then log in.</li>
+    </ol>
+    <div class="row" style="margin-top:10px">
+      <input id="client-id" class="grow" type="text" placeholder="ESI Client ID…" autocomplete="off">
+      <button class="btn green" id="sso-login-2">🔑 Log in with EVE</button>
+    </div>
+  </div>
+  <div class="row" style="margin-bottom:10px" id="sk-char-row">
+    <select id="sk-char" class="grow" style="max-width:300px"></select>
+    <button class="btn sm ghost" id="sk-refresh">⟳ Refresh</button>
+    <button class="btn sm ghost" id="sk-add">+ Add character</button>
+    <button class="btn sm ghost" id="sk-setup">⚙ ESI setup</button>
+  </div>
+  <div id="skills-status" class="status-line"></div>
+  <div id="skills-content" style="display:none">
+    <div id="sk-header" class="char-header"></div>
+    <div class="card">
+      <div class="label-row"><span class="title">Attributes</span><span class="sub" id="sk-mode"></span></div>
+      <div class="attr-row" id="sk-attrs"></div>
+    </div>
+    <div class="card">
+      <div class="label-row"><span class="title">Skill queue</span><span class="sub" id="queue-label"></span></div>
+      <div id="skill-queue"></div>
+    </div>
+    <div class="card">
+      <div class="label-row"><span class="title">Skills</span><span class="sub" id="sp-label"></span></div>
+      <div class="filter-row">
+        <select id="sk-group"><option value="">All groups</option></select>
+        <select id="sk-lvl">
+          <option value="0">Trained (any)</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option><option value="5">5</option>
+          <option value="-1">Not trained yet</option><option value="-2">Everything</option>
+        </select>
+        <input id="sk-search" type="text" placeholder="search skill…" style="width:150px">
+      </div>
+      <div id="skill-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PLANS ══════════ -->
+<div id="page-plans" class="page">
+  <div class="plan-layout">
+    <div>
+      <div class="card">
+        <div class="label-row"><span class="title">My plans</span><button class="btn sm green" id="plan-new">+ New</button></div>
+        <div id="plan-list"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn sm ghost" id="plan-import">⇪ Import…</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Preset plans</div>
+        <div id="preset-list"></div>
+      </div>
+    </div>
+    <div>
+      <div id="plan-empty" class="sso-info">Pick a plan, start a new one, or use a preset. Adding any skill automatically adds the skills it requires first, in training order.</div>
+      <div id="plan-editor" style="display:none">
+        <div class="card">
+          <div class="row" style="margin-bottom:8px">
+            <input id="plan-name" class="grow" type="text" placeholder="Plan name">
+            <select id="plan-char" title="Plan for character"></select>
+          </div>
+          <div class="row" style="margin-bottom:8px;font-size:12px" id="plan-summary"></div>
+          <div class="row">
+            <button class="btn sm ghost" id="plan-export-xml">⇩ EVEMon .xml</button>
+            <button class="btn sm ghost" id="plan-export-emp">⇩ EVEMon .emp</button>
+            <button class="btn sm ghost" id="plan-copy-game">⧉ Copy for in-game</button>
+            <button class="btn sm ghost" id="plan-clean">✓ Remove trained</button>
+            <button class="btn sm ghost" id="plan-dup">⎘ Duplicate</button>
+            <span class="grow"></span>
+            <button class="btn sm red" id="plan-delete">Delete plan</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Add to plan</div>
+          <div class="ta-wrap">
+            <input id="plan-search" type="text" placeholder="Search a skill, or a ship to add everything needed to fly it…" style="width:100%" autocomplete="off">
+            <div class="ta-results" id="plan-search-results"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="label-row"><span class="title">Entries</span><span class="sub" id="plan-attrs-note"></span></div>
+          <div id="plan-entries"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════ CHAR SETS ══════════ -->
+<div id="page-charsets" class="page">
+  <div class="row" style="margin-bottom:10px">
+    <span class="seg" id="cs-sub"><button data-v="sets" class="on">Sets</button><button data-v="chars">Characters</button><button data-v="groups">Groups</button></span>
+    <span class="grow"></span>
+    <button class="btn sm ghost" id="cs-export" title="All characters and groups, with colors">⇩ Export .xlsx</button>
+    <button class="btn sm ghost" id="cs-template" title="Empty sheet with the right columns and examples">⇩ Blank template</button>
+    <button class="btn sm ghost" id="cs-import">⇪ Import</button>
+  </div>
+
+  <div id="cs-sets" class="cs-pane">
+    <div class="card">
+      <div class="row">
+        <select id="cs-set" class="grow" style="max-width:340px"></select>
+        <label id="cs-find-wrap"><input type="checkbox" id="cs-find"> Who else could do this?</label>
+      </div>
+      <div id="cs-set-info" class="status-line"></div>
+      <div id="cs-plates"></div>
+      <div id="cs-pickbar"></div>
+    </div>
+  </div>
+
+  <div id="cs-chars" class="cs-pane" style="display:none">
+    <div class="plan-layout">
+      <div class="card">
+        <div class="label-row"><span class="title">Characters</span><button class="btn sm green" id="cs-c-new">+ New</button></div>
+        <input id="cs-c-search" type="text" placeholder="search…" style="width:100%;margin-bottom:6px">
+        <div id="cs-c-list"></div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title" id="cs-f-title">Add character</div>
+          <div class="cs-form">
+            <label>Name</label><input id="cs-f-name" type="text" placeholder="Character name" autocomplete="off">
+            <label>Account</label>
+            <div class="row"><input id="cs-f-account" class="grow" type="text" list="cs-accounts" placeholder="Account label (new name = new account)" autocomplete="off">
+              <label class="muted"><input type="checkbox" id="cs-f-main"> Account main</label></div>
+            <label>Plate color</label>
+            <div class="row"><input id="cs-f-color" type="color" value="#2a4a6a"><label class="muted"><input type="checkbox" id="cs-f-gcolor" checked> use first group's color</label></div>
+            <label>Groups</label><div class="checks" id="cs-f-groups"></div>
+            <label>Conflicts</label>
+            <div><label class="muted"><input type="checkbox" id="cs-f-hasconf"> This character must NOT be used for…</label>
+              <div class="checks" id="cs-f-conf" style="margin-top:6px;display:none"></div></div>
+            <label>Dedicated</label><label class="muted"><input type="checkbox" id="cs-f-locked"> 🔒 Locked — never suggest it for anything else</label>
+            <label>Location</label><input id="cs-f-loc" type="text" placeholder="e.g. parked in Amamake, Jita alt…">
+            <label>Notes</label><input id="cs-f-notes" type="text" placeholder="standings, implants, anything">
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn green" id="cs-f-save">Save</button>
+            <span id="cs-f-msg" class="muted"></span><span class="grow"></span>
+            <button class="btn sm red" id="cs-f-del" style="display:none">Delete</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Quick add — paste a list</div>
+          <p class="muted" style="margin-bottom:6px">One name per line. A blank line starts the next account. The first name of each account is its main. Optional account label: start a block with <code># Label</code>.</p>
+          <textarea id="cs-bulk" placeholder="# Account 1&#10;Main Pilot&#10;Alt Two&#10;Alt Three&#10;&#10;# Account 2&#10;Other Main&#10;Other Alt"></textarea>
+          <div class="row" style="margin-top:8px"><span class="muted">Add to group:</span><select id="cs-bulk-group"></select><span class="grow"></span><button class="btn green" id="cs-bulk-add">Add all</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="cs-groups" class="cs-pane" style="display:none">
+    <div class="plan-layout">
+      <div class="card">
+        <div class="label-row"><span class="title">Groups</span><button class="btn sm green" id="cs-g-new">+ New</button></div>
+        <div id="cs-g-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title" id="cs-g-title">New group</div>
+        <div class="cs-form">
+          <label>Name</label><input id="cs-g-name" type="text" placeholder="e.g. Lowsec PvP, Null Miner" autocomplete="off">
+          <label>Color</label><input id="cs-g-color" type="color" value="#2e6fb5">
+          <label>Conflicts with</label><div class="checks" id="cs-g-conf"></div>
+          <label>Dedicated</label><label class="muted"><input type="checkbox" id="cs-g-excl"> 🔒 Members can't be pulled into other groups</label>
+          <label>Notes</label><input id="cs-g-notes" type="text">
+        </div>
+        <p class="muted" style="margin-top:8px;font-size:11px">Conflicts work both ways: a pilot in one group is never suggested for the other. Example: Pocket Missioner ↔ Ratter, so nobody ruins pirate standings.</p>
+        <div class="row" style="margin-top:12px">
+          <button class="btn green" id="cs-g-save">Save</button><span id="cs-g-msg" class="muted"></span><span class="grow"></span>
+          <button class="btn sm red" id="cs-g-del" style="display:none">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<datalist id="cs-accounts"></datalist>
+
+<dialog id="cs-import-dlg">
+  <div class="card-title">Import characters &amp; groups</div>
+  <p class="muted" style="margin-bottom:8px">An <b>.xlsx</b> exported here or filled in from the blank template (Excel, LibreOffice, or Google Sheets → Download → .xlsx). A <b>.csv</b> of the Characters sheet also works.</p>
+  <input type="file" id="cs-import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+  <div style="margin:10px 0">
+    <label><input type="radio" name="cs-imode" value="merge" checked> Merge — update matching names, add new ones</label><br>
+    <label><input type="radio" name="cs-imode" value="replace"> Replace everything with the file</label>
+  </div>
+  <div class="row" style="justify-content:flex-end">
+    <button class="btn ghost" id="cs-import-cancel">Cancel</button>
+    <button class="btn green" id="cs-import-go">Import</button>
+  </div>
+</dialog>
+
+<dialog id="import-dlg">
+  <div class="card-title">Import skill plan</div>
+  <p class="muted" style="margin-bottom:8px">EVEMon plan files (<b>.xml</b> or compressed <b>.emp</b>, single plans or multi-plan exports), or paste a list like <code>Navigation 4</code> / <code>Navigation IV</code> (one per line, as copied from the game or EVEMon). Missing prerequisites are added automatically.</p>
+  <div class="row" style="margin-bottom:8px"><input type="file" id="import-file" accept=".xml,.emp,.txt,application/xml,text/plain"></div>
+  <textarea id="import-text" placeholder="…or paste here"></textarea>
+  <div class="row" style="margin-top:10px;justify-content:flex-end">
+    <button class="btn ghost" id="import-cancel">Cancel</button>
+    <button class="btn green" id="import-go">Import</button>
+  </div>
+</dialog>
+
+<div id="flash" class="flash"></div>
+
+<script src="eve-static-data.js"></script>
+<script>
+'use strict';
+// ════════════════════════════════════════════════════════════════
+//  BASICS
+// ════════════════════════════════════════════════════════════════
+const SDE = window.EVE_SDE;
+const ESI_COMPAT = '2026-11-01';
+const SSO_SCOPES = 'esi-skills.read_skills.v1 esi-skills.read_skillqueue.v1 esi-clones.read_implants.v1';
+const CAPSULES = new Set([670, 33328]);
+// Callback/redirect URL: the page URL without query/hash, and without a trailing index.html,
+// so /eve-field-tools/ and /eve-field-tools/index.html both use the same registered callback.
+const PAGE_URL = (location.origin + location.pathname).replace(/index\.html$/i, '');
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
+
+function fmtISK(v) {
+  if (!v) return '—';
+  if (v >= 1e12) return (v / 1e12).toFixed(2) + 'T';
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(0) + 'K';
+  return Math.round(v).toString();
+}
+const fmtNum = n => (n || 0).toLocaleString();
+function fmtDur(sec) {
+  if (sec == null || !isFinite(sec)) return '—';
+  if (sec <= 0) return 'done';
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${Math.max(1, m)}m`;
+}
+const fmtDate = t => t ? new Date(t).toISOString().slice(0, 10) : '';
+const fmtDateTime = t => t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') : '';
+const portrait = (id, s = 64) => `https://images.evetech.net/characters/${id}/portrait?size=${s}`;
+const typeIcon = (id, s = 32) => `https://images.evetech.net/types/${id}/icon?size=${s}`;
+
+let flashT;
+function flash(msg, isErr) {
+  const f = $('#flash');
+  f.textContent = msg; f.className = 'flash' + (isErr ? ' err' : ''); f.style.display = 'block';
+  clearTimeout(flashT); flashT = setTimeout(() => f.style.display = 'none', isErr ? 6000 : 3500);
+}
+function setStatus(id, msg, isErr) { const el = $('#' + id); el.textContent = msg || ''; el.className = 'status-line' + (isErr ? ' err' : ''); }
+
+// ════════════════════════════════════════════════════════════════
+//  STORAGE — permanent keys. Never renamed; schema changes get migrations.
+// ════════════════════════════════════════════════════════════════
+const KEYS = {
+  settings: 'eft.settings.v1',          // { clientId }
+  ssoChars: 'eft.sso.characters.v1',    // { [charId]: { id, name, refresh, access, exp, scopes, needsLogin } }
+  skillChar: 'eft.skills.activeChar.v1',
+  tracked: 'eft.kb.tracked.v1',         // [{ id, name, star, added }]
+  kbSelected: 'eft.kb.selected.v1',
+  plans: 'eft.plans.v1',                // { schema, plans: [...] }
+  charsets: 'eft.charsets.v1',          // { schema, groups: [...], chars: [...] }
+  activePlan: 'eft.plans.active.v1',
+  ui: 'eft.ui.v1',
+  migrated: 'eft.migrated.v1',
+};
+const LS = {
+  get(k, def) { try { const v = localStorage.getItem(k); return v !== null ? JSON.parse(v) : def; } catch { return def; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { console.warn('localStorage write failed', k, e); } },
+  del(k) { try { localStorage.removeItem(k); } catch { } },
+};
+
+function runMigrations() {
+  const ver = LS.get(KEYS.migrated, 0);
+  if (ver < 1) {
+    // From the first prototype (index1.html). Old keys are left in place, only copied.
+    const st = LS.get(KEYS.settings, {});
+    let oldClient = LS.get('eve_client_id', null);
+    if (oldClient && !st.clientId) {
+      st.clientId = String(oldClient).trim().replace(/^"+|"+$/g, '');
+      LS.set(KEYS.settings, st);
+    }
+    const hist = LS.get('kb_history', []);
+    if (Array.isArray(hist) && hist.length) {
+      const tr = LS.get(KEYS.tracked, []);
+      for (const n of hist) {
+        if (typeof n === 'string' && n.trim() && !tr.some(t => (t.name || '').toLowerCase() === n.trim().toLowerCase()))
+          tr.push({ id: null, name: n.trim(), star: false, added: Date.now() });
+      }
+      LS.set(KEYS.tracked, tr);
+    }
+    LS.set(KEYS.migrated, 1);
+  }
+  // Plans schema guard
+  const p = LS.get(KEYS.plans, null);
+  if (!p || typeof p !== 'object' || !Array.isArray(p.plans)) LS.set(KEYS.plans, { schema: 1, plans: Array.isArray(p) ? p : [] });
+}
+
+// IndexedDB: killmails (shared by every character), per-character sync state, name cache.
+const DB = {
+  _p: null,
+  open() {
+    if (this._p) return this._p;
+    this._p = new Promise((res, rej) => {
+      const r = indexedDB.open('eve-field-tools', 1);
+      r.onupgradeneeded = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains('killmails')) db.createObjectStore('killmails', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('charSync')) db.createObjectStore('charSync', { keyPath: 'charId' });
+        if (!db.objectStoreNames.contains('names')) db.createObjectStore('names', { keyPath: 'id' });
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return this._p;
+  },
+  async get(store, key) {
+    const db = await this.open();
+    return new Promise((res, rej) => { const q = db.transaction(store).objectStore(store).get(key); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  },
+  async getMany(store, keys) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store), os = tx.objectStore(store), out = [];
+      for (const k of keys) { const q = os.get(k); q.onsuccess = () => { if (q.result) out.push(q.result); }; }
+      tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error);
+    });
+  },
+  async keysIn(store, keys) { // which of these keys exist
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store), os = tx.objectStore(store), have = new Set();
+      for (const k of keys) { const q = os.getKey(k); q.onsuccess = () => { if (q.result !== undefined) have.add(k); }; }
+      tx.oncomplete = () => res(have); tx.onerror = () => rej(tx.error);
+    });
+  },
+  async putMany(store, vals) {
+    if (!vals.length) return;
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store, 'readwrite'), os = tx.objectStore(store);
+      for (const v of vals) os.put(v);
+      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+    });
+  },
+  put(store, val) { return this.putMany(store, [val]); },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  API CLIENTS
+// ════════════════════════════════════════════════════════════════
+class HttpError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
+
+const ESI = {
+  base: 'https://esi.evetech.net',
+  legacy: false,
+  _probe: null,
+  pauseUntil: 0,
+  // Prefer the new unversioned routes (compatibility date); fall back to /latest if they are refused.
+  probe() {
+    if (!this._probe) this._probe = fetch(`${this.base}/status/?compatibility_date=${ESI_COMPAT}`)
+      .then(r => { if (r.status === 400 || r.status === 404) this.legacy = true; })
+      .catch(() => { });
+    return this._probe;
+  },
+  url(path) {
+    if (this.legacy) return `${this.base}/latest${path}`;
+    return `${this.base}${path}${path.includes('?') ? '&' : '?'}compatibility_date=${ESI_COMPAT}`;
+  },
+  async req(path, { method = 'GET', body, token, retries = 4 } = {}) {
+    await this.probe();
+    for (let attempt = 0; ; attempt++) {
+      const wait = this.pauseUntil - Date.now();
+      if (wait > 0) await sleep(wait);
+      const headers = { Accept: 'application/json' };
+      if (body) headers['Content-Type'] = 'application/json';
+      if (token) headers.Authorization = 'Bearer ' + token;
+      let r;
+      try { r = await fetch(this.url(path), { method, headers, body: body ? JSON.stringify(body) : undefined }); }
+      catch (e) {
+        if (attempt < retries) { await sleep(1000 * 2 ** attempt); continue; }
+        throw new HttpError('Could not reach ESI (network/CORS error)', 0);
+      }
+      const remain = r.headers.get('X-ESI-Error-Limit-Remain');
+      const reset = r.headers.get('X-ESI-Error-Limit-Reset');
+      if (remain !== null && +remain < 15) this.pauseUntil = Math.max(this.pauseUntil, Date.now() + (+reset || 30) * 1000 + 500);
+      if (r.ok) return r.status === 204 ? null : r.json();
+      if (r.status === 420) { this.pauseUntil = Date.now() + (+reset || 60) * 1000 + 500; if (attempt < retries) continue; }
+      if (r.status === 429) { await sleep((+(r.headers.get('Retry-After')) || 10) * 1000); if (attempt < retries) continue; }
+      if (r.status >= 500 && attempt < retries) { await sleep(800 * 2 ** attempt); continue; }
+      let detail = '';
+      try { const j = await r.json(); detail = j.error || ''; } catch { }
+      throw new HttpError(`ESI ${r.status}${detail ? ': ' + detail : ''} (${path.split('?')[0]})`, r.status);
+    }
+  },
+};
+
+const ZK = {
+  _chain: Promise.resolve(), last: 0,
+  // zKillboard asks for gentle use: requests are serialized, ~1 per second.
+  get(path) {
+    const run = async () => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const wait = this.last + 1100 - Date.now();
+        if (wait > 0) await sleep(wait);
+        this.last = Date.now();
+        let r;
+        try { r = await fetch('https://zkillboard.com/api' + path, { headers: { Accept: 'application/json' } }); }
+        catch (e) { await sleep(2000 * (attempt + 1)); continue; }
+        if (r.status === 429 || r.status >= 500) { await sleep(3000 * (attempt + 1)); continue; }
+        if (!r.ok) throw new HttpError(`zKillboard ${r.status}`, r.status);
+        const j = await r.json();
+        if (j && !Array.isArray(j) && j.error) throw new HttpError('zKillboard: ' + j.error, 400);
+        return j;
+      }
+      throw new HttpError('zKillboard is not responding (try again shortly)', 0);
+    };
+    const p = this._chain.then(run, run);
+    this._chain = p.catch(() => { });
+    return p;
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  NAMES (types, characters, corps, systems)
+// ════════════════════════════════════════════════════════════════
+const Names = {
+  mem: new Map(),
+  typeName(id) {
+    if (!id) return 'Unknown';
+    const s = SDE.ships[id] || SDE.other[id];
+    if (s) return s[0];
+    const m = this.mem.get(id);
+    return m ? m.name : `Type ${id}`;
+  },
+  typeClass(id) {
+    const s = SDE.ships[id] || SDE.other[id];
+    if (s) return SDE.typeGroups[s[1]] || '';
+    return this.mem.get(id)?.cat === 'inventory_type' ? 'Other' : '';
+  },
+  name(id) { return this.mem.get(id)?.name || null; },
+  knownType(id) { return !!(SDE.ships[id] || SDE.other[id] || this.mem.has(id)); },
+  async load(ids) {
+    ids = [...new Set(ids.filter(i => i && i > 0 && !this.mem.has(i) && !SDE.ships[i] && !SDE.other[i]))];
+    if (!ids.length) return false;
+    const before = this.mem.size;
+    const cached = await DB.getMany('names', ids);
+    for (const c of cached) this.mem.set(c.id, c);
+    const rest = ids.filter(i => !this.mem.has(i));
+    if (rest.length) await this._fetch(rest);
+    return this.mem.size > before; // only "changed" if something new was learned (prevents re-render loops)
+  },
+  async _fetch(ids) {
+    // /universe/names/ fails the whole batch if any ID is invalid, so split on failure.
+    for (let i = 0; i < ids.length; i += 1000) {
+      const chunk = ids.slice(i, i + 1000);
+      try {
+        const res = await ESI.req('/universe/names/', { method: 'POST', body: chunk, retries: 2 });
+        const recs = res.map(r => ({ id: r.id, name: r.name, cat: r.category }));
+        for (const r of recs) this.mem.set(r.id, r);
+        await DB.putMany('names', recs);
+      } catch (e) {
+        if (e.status === 404 && chunk.length > 1) {
+          const h = Math.ceil(chunk.length / 2);
+          await this._fetch(chunk.slice(0, h)); await this._fetch(chunk.slice(h));
+        } else if (e.status === 404) {
+          this.mem.set(chunk[0], { id: chunk[0], name: `#${chunk[0]}`, cat: 'unknown' }); // don't retry this session
+        } else console.warn('name lookup failed', e);
+      }
+    }
+  },
+};
+
+async function resolveCharacterName(name) {
+  const res = await ESI.req('/universe/ids/', { method: 'POST', body: [name.trim()] });
+  const list = res?.characters || [];
+  const exact = list.find(c => c.name.toLowerCase() === name.trim().toLowerCase()) || list[0];
+  return exact ? { id: exact.id, name: exact.name } : null;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  KILLMAIL SYNC — zKillboard gives IDs + hashes; ESI gives the killmail.
+//  Killmails never change, so each one is fetched once and kept.
+// ════════════════════════════════════════════════════════════════
+function trimKM(km) {
+  const v = km.victim || {};
+  return {
+    id: km.killmail_id,
+    t: Date.parse(km.killmail_time),
+    sys: km.solar_system_id || 0,
+    v: [v.character_id || 0, v.corporation_id || 0, v.alliance_id || 0, v.ship_type_id || 0, v.damage_taken || 0],
+    a: (km.attackers || []).map(a => [a.character_id || 0, a.ship_type_id || 0, a.final_blow ? 1 : 0, a.corporation_id || 0, a.alliance_id || 0, a.weapon_type_id || 0]),
+  };
+}
+
+const Sync = {
+  jobs: new Map(),
+  listeners: new Set(),
+  on(fn) { this.listeners.add(fn); },
+  emit(job, batch) { for (const fn of this.listeners) try { fn(job, batch); } catch (e) { console.error(e); } },
+  async state(charId) {
+    return (await DB.get('charSync', charId)) || { charId, list: {}, complete: false, pagesDone: 0, lastSync: 0 };
+  },
+  stop(charId) { const j = this.jobs.get(charId); if (j) j.abort = true; },
+  // full=false: only the newest zKill page (quick look at a pilot). full=true: whole history.
+  async run(charId, { full = true } = {}) {
+    if (this.jobs.has(charId)) return this.jobs.get(charId).promise;
+    const job = { charId, full, abort: false, phase: 'pages', page: 0, newIds: 0, total: 0, toFetch: 0, fetched: 0, failed: 0, note: '', error: '' };
+    this.jobs.set(charId, job);
+    job.promise = this._run(job).catch(e => { job.error = e.message; console.error(e); })
+      .finally(() => { job.done = true; this.jobs.delete(charId); this.emit(job); });
+    this.emit(job);
+    return job.promise;
+  },
+  async _run(job) {
+    const { charId, full } = job;
+    const st = await this.state(charId);
+    job.st = st;
+    const known = st.list;
+    // ── Phase 1: list of killmail IDs + hashes from zKillboard ──
+    let page = 1;
+    while (!job.abort) {
+      job.phase = 'pages'; job.page = page; this.emit(job);
+      let data;
+      try { data = await ZK.get(`/characterID/${charId}/page/${page}/`); }
+      catch (e) {
+        if (page > 1 && full) { st.complete = true; job.note = `zKillboard stopped at page ${page}; older history is not available from its API.`; break; }
+        throw e;
+      }
+      if (!Array.isArray(data) || data.length === 0) { if (full) st.complete = true; break; }
+      let sawKnown = false;
+      for (const k of data) {
+        const id = k.killmail_id, z = k.zkb || {};
+        if (!id || !z.hash) continue;
+        if (known[id]) { sawKnown = true; continue; }
+        known[id] = [z.hash, Math.round(z.totalValue || 0), z.solo ? 1 : 0, z.npc ? 1 : 0];
+        job.newIds++;
+      }
+      if (full && !st.complete) st.pagesDone = Math.max(st.pagesDone, page);
+      await DB.put('charSync', st);
+      if (!full) break;
+      if (sawKnown) {
+        if (st.complete) break;                      // caught up with an already-complete history
+        page = Math.max(page + 1, st.pagesDone + 1); // resume an interrupted first sync
+        continue;
+      }
+      page++;
+    }
+    await DB.put('charSync', st);
+    // ── Phase 2: killmail details from ESI, newest first ──
+    const ids = Object.keys(known).map(Number).sort((a, b) => b - a);
+    const have = await DB.keysIn('killmails', ids);
+    const todo = ids.filter(id => !have.has(id));
+    job.phase = 'details'; job.total = ids.length; job.toFetch = todo.length; job.fetched = 0;
+    this.emit(job);
+    let idx = 0, batch = [];
+    const flush = async () => {
+      if (!batch.length) return;
+      const b = batch; batch = [];
+      await DB.putMany('killmails', b);
+      this.emit(job, b.filter(x => !x.bad));
+    };
+    const worker = async () => {
+      while (!job.abort && idx < todo.length) {
+        const id = todo[idx++];
+        try {
+          const km = await ESI.req(`/killmails/${id}/${known[id][0]}/`);
+          batch.push(trimKM(km));
+          job.fetched++;
+        } catch (e) {
+          job.failed++; job.lastError = e.message;
+          if (e.status === 404 || e.status === 422) batch.push({ id, bad: 1 }); // bad hash: don't retry forever
+        }
+        if (batch.length >= 25) await flush();
+      }
+    };
+    await Promise.all(Array.from({ length: 8 }, worker));
+    await flush();
+    st.lastSync = Date.now();
+    await DB.put('charSync', st);
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  KILLBOARD VIEW (shared character selector)
+// ════════════════════════════════════════════════════════════════
+const KB = {
+  charId: null,
+  st: null,             // charSync record
+  kms: new Map(),       // id -> trimmed killmail (only this character's)
+  zkStats: new Map(),   // charId -> zKill stats
+  info: new Map(),      // charId -> { corp, alliance }
+  feedPage: 1, feedSize: 50,
+  open: { killed: null, ships: null },
+
+  tracked() { return LS.get(KEYS.tracked, []); },
+  saveTracked(t) { LS.set(KEYS.tracked, t); },
+  current() { return this.tracked().find(t => t.id === this.charId); },
+
+  renderSelector() {
+    const t = this.tracked();
+    const sel = $('#kb-char');
+    const sso = Object.values(LS.get(KEYS.ssoChars, {}));
+    sel.innerHTML = (t.length ? '' : '<option value="">— no pilots yet —</option>') + t
+      .slice().sort((a, b) => (b.star - a.star) || a.name.localeCompare(b.name))
+      .map(c => `<option value="${c.id ?? 'n:' + esc(c.name)}">${c.star ? '★ ' : ''}${esc(c.name)}${sso.some(s => s.id === c.id) ? ' (you)' : ''}</option>`).join('');
+    if (this.charId) sel.value = String(this.charId);
+    const cur = this.current();
+    $('#kb-star').textContent = cur?.star ? '★ Tracked' : '☆ Track';
+    $('#kb-star').className = 'btn sm ' + (cur?.star ? 'gold' : 'ghost');
+    $('#kb-star').disabled = $('#kb-remove').disabled = $('#kb-sync').disabled = !cur;
+  },
+
+  async addByName(name) {
+    name = name.trim(); if (!name) return;
+    $('#sync-text').textContent = `Looking up "${name}"…`;
+    let r;
+    try { r = await resolveCharacterName(name); }
+    catch (e) { $('#sync-text').textContent = 'Lookup failed: ' + e.message; return; }
+    if (!r) { $('#sync-text').textContent = `No pilot named "${name}".`; return; }
+    this.ensure(r.id, r.name);
+    $('#kb-add').value = '';
+    await this.select(r.id);
+  },
+
+  ensure(id, name, star = false) {
+    const t = this.tracked();
+    let c = t.find(x => x.id === id) || t.find(x => x.id == null && x.name.toLowerCase() === (name || '').toLowerCase());
+    if (c) { c.id = id; if (name) c.name = name; if (star) c.star = true; }
+    else t.push({ id, name: name || `Pilot ${id}`, star, added: Date.now() });
+    this.saveTracked(t);
+  },
+
+  async select(id) {
+    if (typeof id === 'string' && id.startsWith('n:')) {     // migrated name without an ID yet
+      const nm = id.slice(2);
+      const r = await resolveCharacterName(nm).catch(() => null);
+      if (!r) { $('#sync-text').textContent = `Couldn't find "${nm}".`; return; }
+      const t = this.tracked().filter(x => !(x.id == null && x.name.toLowerCase() === nm.toLowerCase()));
+      this.saveTracked(t); this.ensure(r.id, r.name); id = r.id;
+    }
+    id = Number(id) || null;
+    this.charId = id; LS.set(KEYS.kbSelected, id);
+    this.kms = new Map(); this.st = null; this.feedPage = 1; this.open = { killed: null, ships: null };
+    this.renderSelector();
+    if (!id) { this.renderAll(); return; }
+    await this.loadCache();
+    this.renderAll();
+    this.loadHeader(id);
+    const cur = this.current();
+    // Tracked pilots: full history. Others: newest page only, unless already synced before.
+    const full = !!cur?.star || (this.st && this.st.pagesDone > 1);
+    Sync.run(id, { full });
+  },
+
+  async loadCache() {
+    const id = this.charId;
+    const st = await Sync.state(id);
+    if (id !== this.charId) return;
+    this.st = st;
+    const ids = Object.keys(st.list).map(Number);
+    const kms = await DB.getMany('killmails', ids);
+    if (id !== this.charId) return;
+    this.badCount = kms.filter(k => k.bad).length;
+    this.kms = new Map(kms.filter(k => !k.bad).map(k => [k.id, k]));
+  },
+
+  async loadHeader(id) {
+    if (!this.zkStats.has(id)) {
+      ZK.get(`/stats/characterID/${id}/`).then(s => { this.zkStats.set(id, s || {}); if (this.charId === id) this.renderKB(); })
+        .catch(e => { this.zkStats.set(id, { _err: e.message }); if (this.charId === id) this.renderKB(); });
+    }
+    if (!this.info.has(id)) {
+      try {
+        const c = await ESI.req(`/characters/${id}/`);
+        await Names.load([c.corporation_id, c.alliance_id].filter(Boolean));
+        this.info.set(id, { corp: Names.name(c.corporation_id), alliance: c.alliance_id ? Names.name(c.alliance_id) : '' });
+        if (this.charId === id) this.renderKB();
+      } catch { }
+    }
+  },
+
+  onSync(job, batch) {
+    if (job.charId === this.charId) {
+      if (job.st) this.st = job.st;
+      if (batch?.length) {
+        for (const k of batch) this.kms.set(k.id, k);
+        this.scheduleRender();
+      }
+      if (job.done) this.loadCache().then(() => this.renderAll());
+      this.renderSyncInfo(job);
+    }
+  },
+  _rt: null,
+  scheduleRender() { if (!this._rt) this._rt = setTimeout(() => { this._rt = null; this.renderAll(); }, 700); },
+
+  renderSyncInfo(job) {
+    const st = this.st;
+    const bar = $('#sync-bar');
+    let txt = '';
+    if (job && !job.done) {
+      if (job.phase === 'pages') { txt = `Reading zKillboard page ${job.page}… (${fmtNum(job.newIds)} new)`; bar.style.width = '5%'; }
+      else {
+        const pct = job.toFetch ? Math.round(job.fetched / job.toFetch * 100) : 100;
+        txt = `Downloading killmails ${fmtNum(job.fetched)} / ${fmtNum(job.toFetch)}${job.failed ? ` · ${job.failed} failed` : ''}`;
+        bar.style.width = pct + '%';
+      }
+      $('#kb-sync').textContent = '■ Stop';
+    } else {
+      bar.style.width = '0';
+      $('#kb-sync').textContent = '⟳ Sync';
+      if (st) {
+        const n = this.kms.size, listed = Object.keys(st.list).length - (this.badCount || 0);
+        txt = `${fmtNum(n)} killmails cached` + (listed > n ? ` (${fmtNum(listed - n)} not downloaded yet)` : '')
+          + (st.complete ? ' · full history' : st.pagesDone > 1 ? ' · partial history' : ' · newest page only — press Sync for full history')
+          + (st.lastSync ? ` · synced ${fmtDateTime(st.lastSync)} UTC` : '');
+      }
+      if (job?.error) txt = '⚠ ' + job.error + (txt ? ' · ' + txt : '');
+      else if (job?.failed) txt += ` · ${job.failed} could not be fetched (will retry next sync)`;
+      if (job?.note) txt += ' · ' + job.note;
+    }
+    $('#sync-text').textContent = txt;
+  },
+
+  // ── Analysis ──
+  filters(page) {
+    const root = $('#page-' + page);
+    return {
+      days: +($('.f-period', root)?.value || 0),
+      pods: !!$('.f-pods', root)?.checked,
+      solo: !!$('.f-solo', root)?.checked,
+    };
+  },
+  classify(km) {
+    const me = this.charId;
+    if (km.v[0] === me) return 'loss';
+    if (km.a.some(a => a[0] === me)) return 'kill';
+    return null;
+  },
+  mails(f) {
+    const since = f.days ? Date.now() - f.days * 86400e3 : 0;
+    const out = [];
+    for (const km of this.kms.values()) {
+      if (since && km.t < since) continue;
+      const kind = this.classify(km);
+      if (!kind) continue;
+      const z = this.st?.list[km.id] || [];
+      if (f.solo && !(kind === 'kill' && z[2])) continue;
+      out.push({ km, kind, value: z[1] || 0, solo: !!z[2], npc: !!z[3] });
+    }
+    return out;
+  },
+  myShipOn(km) {
+    const me = this.charId;
+    if (km.v[0] === me) return km.v[3];
+    const a = km.a.find(x => x[0] === me);
+    return a ? a[1] : 0;
+  },
+  victimStats(f) {
+    const m = new Map();
+    let total = 0;
+    for (const { km, kind, value } of this.mails(f)) {
+      if (kind !== 'kill') continue;
+      const t = km.v[3];
+      if (f.pods && CAPSULES.has(t)) continue;
+      total++;
+      let r = m.get(t); if (!r) m.set(t, r = { type: t, count: 0, isk: 0, by: new Map() });
+      r.count++; r.isk += value;
+      const mine = this.myShipOn(km);
+      r.by.set(mine, (r.by.get(mine) || 0) + 1);
+    }
+    return { rows: [...m.values()].sort((a, b) => b.count - a.count || b.isk - a.isk), total };
+  },
+  shipStats(f) {
+    const m = new Map();
+    const get = t => { let r = m.get(t); if (!r) m.set(t, r = { type: t, kills: 0, deaths: 0, iskK: 0, iskL: 0, killed: new Map(), diedTo: new Map() }); return r; };
+    for (const { km, kind, value } of this.mails(f)) {
+      const mine = this.myShipOn(km);
+      if (f.pods && CAPSULES.has(mine)) continue;
+      const r = get(mine);
+      if (kind === 'kill') {
+        r.kills++; r.iskK += value;
+        const vt = km.v[3];
+        r.killed.set(vt, (r.killed.get(vt) || 0) + 1);
+      } else {
+        r.deaths++; r.iskL += value;
+        const seen = new Set(), fb = km.a.find(a => a[2]);
+        for (const a of km.a) {
+          const t = a[1]; if (!t || seen.has(t)) continue; seen.add(t);
+          let d = r.diedTo.get(t); if (!d) r.diedTo.set(t, d = { n: 0, fb: 0 });
+          d.n++;
+        }
+        if (fb && fb[1]) { const d = r.diedTo.get(fb[1]); if (d) d.fb++; }
+      }
+    }
+    return [...m.values()];
+  },
+
+  // ── Rendering ──
+  renderAll() {
+    const page = UI.page;
+    if (page === 'kb') this.renderKB();
+    if (page === 'killed') this.renderKilled();
+    if (page === 'ships') this.renderShips();
+    this.renderSyncInfo(Sync.jobs.get(this.charId));
+  },
+
+  renderKB() {
+    const id = this.charId;
+    $('#kb-empty').style.display = id ? 'none' : 'block';
+    $('#kb-body').style.display = id ? 'block' : 'none';
+    if (!id) return;
+    const c = this.current();
+    const info = this.info.get(id) || {};
+    $('#kb-header').innerHTML = `<img class="char-portrait" src="${portrait(id)}" alt="">
+      <div><div class="char-name">${esc(c?.name || '')}</div>
+      <div class="char-corp">${esc(info.corp || '')}${info.alliance ? ' · ' + esc(info.alliance) : ''}</div></div>`;
+    $('#kb-zk-link').innerHTML = `<a href="https://zkillboard.com/character/${id}/" target="_blank" rel="noopener">Open on zKillboard ↗</a>`;
+    const s = this.zkStats.get(id);
+    if (!s) $('#kb-stats').innerHTML = '<div class="empty">Loading…</div>';
+    else if (s._err) $('#kb-stats').innerHTML = `<div class="empty">zKillboard stats unavailable: ${esc(s._err)}</div>`;
+    else {
+      const k = s.shipsDestroyed || 0, l = s.shipsLost || 0, iD = s.iskDestroyed || 0, iL = s.iskLost || 0;
+      const eff = iD + iL ? Math.round(iD / (iD + iL) * 100) : 0;
+      const box = (lbl, val, cls) => `<div class="stat-box"><div class="stat-label">${lbl}</div><div class="stat-val ${cls || ''}">${val}</div></div>`;
+      $('#kb-stats').innerHTML = box('Kills', fmtNum(k), 'green') + box('Losses', fmtNum(l), 'red')
+        + box('K/D', l ? (k / l).toFixed(2) : (k ? '∞' : '—'), 'teal') + box('ISK destroyed', fmtISK(iD), 'gold')
+        + box('ISK lost', fmtISK(iL)) + box('ISK efficiency', eff + '%', eff >= 50 ? 'green' : 'red')
+        + box('Solo kills', fmtNum(s.soloKills || 0), 'purple') + box('Danger', (s.dangerRatio ?? '—') + '%', 'orange')
+        + box('Gang', (s.gangRatio ?? '—') + '%', 'teal');
+    }
+    this.renderFeed();
+  },
+
+  async renderFeed() {
+    const type = $('#feed-type').value, q = $('#feed-ship').value.trim().toLowerCase();
+    let rows = this.mails({ days: 0, solo: type === 'solo' });
+    if (type === 'kill') rows = rows.filter(r => r.kind === 'kill');
+    if (type === 'loss') rows = rows.filter(r => r.kind === 'loss');
+    if (q) rows = rows.filter(r => Names.typeName(r.km.v[3]).toLowerCase().includes(q) || Names.typeName(this.myShipOn(r.km)).toLowerCase().includes(q));
+    rows.sort((a, b) => b.km.id - a.km.id);
+    const pages = Math.max(1, Math.ceil(rows.length / this.feedSize));
+    this.feedPage = Math.min(this.feedPage, pages);
+    const slice = rows.slice((this.feedPage - 1) * this.feedSize, this.feedPage * this.feedSize);
+    $('#feed-info').textContent = `${fmtNum(rows.length)} cached`;
+    $('#feed-page').textContent = `Page ${this.feedPage} / ${pages}`;
+    $('#feed-prev').disabled = this.feedPage <= 1; $('#feed-next').disabled = this.feedPage >= pages;
+    const draw = () => {
+      $('#kill-feed').innerHTML = slice.length ? slice.map(({ km, kind, value, solo, npc }) => {
+        const fb = km.a.find(a => a[2]) || km.a[0] || [];
+        const vName = km.v[0] ? (Names.name(km.v[0]) || '…') : (Names.name(km.v[1]) || 'Structure/NPC');
+        const mine = this.myShipOn(km);
+        const pilot = (id, nm) => id ? `<span class="pilot" data-pilot="${id}">${esc(nm || Names.name(id) || '…')}</span>` : esc(nm || '');
+        const l1 = kind === 'kill'
+          ? `☠ ${esc(Names.typeName(km.v[3]))} — ${pilot(km.v[0], vName)}`
+          : `💀 Lost ${esc(Names.typeName(km.v[3]))}`;
+        const l2 = kind === 'kill'
+          ? `flying ${esc(Names.typeName(mine))} · ${km.a.length} on mail · ${esc(Names.name(km.sys) || '')}`
+          : `final blow ${pilot(fb[0], '')} (${esc(Names.typeName(fb[1]))}) · ${km.a.length} attackers · ${esc(Names.name(km.sys) || '')}`;
+        return `<div class="kill-row"><div class="kill-dot ${kind === 'kill' ? 'win' : 'loss'}"></div>
+          <img src="${typeIcon(km.v[3])}" alt="" loading="lazy">
+          <div class="kill-main"><div class="l1">${l1}${solo ? '<span class="tag solo">SOLO</span>' : ''}${npc ? '<span class="tag npc">NPC</span>' : ''}</div><div class="l2">${l2}</div></div>
+          <div class="kill-side"><div class="isk">${fmtISK(value)}</div><div>${fmtDate(km.t)}</div><a href="https://zkillboard.com/kill/${km.id}/" target="_blank" rel="noopener">zkill ↗</a></div></div>`;
+      }).join('') : `<div class="empty">${this.kms.size ? 'Nothing matches.' : 'No killmails cached yet.'}</div>`;
+    };
+    draw();
+    const need = [];
+    for (const { km } of slice) {
+      need.push(km.v[0], km.v[1], km.sys, km.v[3]);
+      const fb = km.a.find(a => a[2]); if (fb) need.push(fb[0], fb[1]);
+      need.push(this.myShipOn(km));
+    }
+    if (await Names.load(need)) draw();
+  },
+
+  shipRowHTML(t, right, extra = '') {
+    return `<img src="${typeIcon(t)}" alt="" loading="lazy"><div><div class="nm">${esc(Names.typeName(t))}</div><div class="cls">${esc(Names.typeClass(t))}${extra}</div></div><div class="nums">${right}</div>`;
+  },
+  drillList(entries, fmt) {
+    if (!entries.length) return '<div class="muted">—</div>';
+    return entries.map(([t, v]) => `<div class="dl"><img src="${typeIcon(t)}" alt="" loading="lazy"><span>${esc(Names.typeName(t))}</span><span class="cnt">${fmt(v)}</span></div>`).join('');
+  },
+  async ensureTypeNames(types) { if (await Names.load(types.filter(t => !Names.knownType(t)))) this.scheduleRender(); },
+
+  renderKilled() {
+    const box = $('#killed-list');
+    if (!this.charId) { box.innerHTML = '<div class="empty">Pick a pilot above.</div>'; $('#killed-sum').textContent = ''; return; }
+    const { rows, total } = this.victimStats(this.filters('killed'));
+    const q = $('#killed-search').value.trim().toLowerCase();
+    const grouped = $('#killed-mode .on').dataset.v === 'group';
+    let list = q ? rows.filter(r => Names.typeName(r.type).toLowerCase().includes(q) || Names.typeClass(r.type).toLowerCase().includes(q)) : rows;
+    $('#killed-sum').textContent = `${fmtNum(total)} kills · ${rows.length} ship types`;
+    const max = rows[0]?.count || 1;
+    const rowHTML = r => {
+      const open = this.open.killed === r.type;
+      const html = `<div class="lrow${open ? ' open' : ''}" data-type="${r.type}">${this.shipRowHTML(r.type,
+        `<div class="big green">${fmtNum(r.count)}</div><div class="cls">${fmtISK(r.isk)}</div>`,
+        `<div class="bar" style="width:120px"><div class="k" style="width:${Math.round(r.count / max * 100)}%"></div></div>`)}</div>`;
+      if (!open) return html;
+      const by = [...r.by.entries()].sort((a, b) => b[1] - a[1]);
+      return html + `<div class="drill"><h4>Killed using</h4>${this.drillList(by, v => '×' + v)}</div>`;
+    };
+    if (!list.length) box.innerHTML = `<div class="empty">${this.kms.size ? 'No kills match.' : 'No killmails cached yet — sync this pilot.'}</div>`;
+    else if (!grouped) box.innerHTML = list.map(rowHTML).join('');
+    else {
+      const g = new Map();
+      for (const r of list) { const c = Names.typeClass(r.type) || 'Other'; if (!g.has(c)) g.set(c, []); g.get(c).push(r); }
+      box.innerHTML = [...g.entries()].map(([c, rs]) => [c, rs, rs.reduce((s, r) => s + r.count, 0)]).sort((a, b) => b[2] - a[2])
+        .map(([c, rs, n]) => `<div class="group-hdr"><span>${esc(c)}</span><span>${fmtNum(n)}</span></div>` + rs.map(rowHTML).join('')).join('');
+    }
+    this.ensureTypeNames(rows.flatMap(r => [r.type, ...r.by.keys()]));
+  },
+
+  renderShips() {
+    const box = $('#ships-list');
+    if (!this.charId) { box.innerHTML = '<div class="empty">Pick a pilot above.</div>'; $('#ships-sum').textContent = ''; return; }
+    const mode = $('#ships-mode .on').dataset.v;
+    const all = this.shipStats(this.filters('ships'));
+    const q = $('#ships-search').value.trim().toLowerCase();
+    let rows = all.filter(r => mode === 'kills' ? r.kills > 0 : r.deaths > 0);
+    if (q) rows = rows.filter(r => Names.typeName(r.type).toLowerCase().includes(q) || Names.typeClass(r.type).toLowerCase().includes(q));
+    rows.sort(mode === 'kills' ? (a, b) => b.kills - a.kills || a.deaths - b.deaths : (a, b) => b.deaths - a.deaths || b.kills - a.kills);
+    const tk = all.reduce((s, r) => s + r.kills, 0), td = all.reduce((s, r) => s + r.deaths, 0);
+    $('#ships-sum').textContent = `${fmtNum(tk)} kills · ${fmtNum(td)} deaths · ${all.length} hulls`;
+    if (!rows.length) { box.innerHTML = `<div class="empty">${this.kms.size ? 'Nothing here for this filter.' : 'No killmails cached yet — sync this pilot.'}</div>`; return; }
+    box.innerHTML = rows.map(r => {
+      const tot = r.kills + r.deaths, kp = tot ? Math.round(r.kills / tot * 100) : 0;
+      const kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : (r.kills ? '∞' : '—');
+      const open = this.open.ships === r.type;
+      const right = `<div><span class="big green">${fmtNum(r.kills)}</span> <span class="muted">/</span> <span class="big red">${fmtNum(r.deaths)}</span></div><div class="cls">K/D ${kd}</div>`;
+      let html = `<div class="lrow${open ? ' open' : ''}" data-type="${r.type}">${this.shipRowHTML(r.type, right,
+        `<div class="bar" style="width:140px"><div class="k" style="width:${kp}%"></div><div class="l" style="width:${tot ? 100 - kp : 0}%"></div></div>`)}</div>`;
+      if (open) {
+        const killed = [...r.killed.entries()].sort((a, b) => b[1] - a[1]);
+        const died = [...r.diedTo.entries()].sort((a, b) => b[1].n - a[1].n);
+        const kHTML = `<div><h4>What it killed (${fmtNum(r.kills)})</h4>${this.drillList(killed, v => '×' + v)}</div>`;
+        const dHTML = `<div><h4>What it died to (${fmtNum(r.deaths)} losses)</h4>${this.drillList(died, v => `×${v.n}${v.fb ? ` <span class="muted" title="final blows">(${v.fb} FB)</span>` : ''}`)}</div>`;
+        html += `<div class="drill"><div class="cls" style="margin-bottom:4px">ISK killed ${fmtISK(r.iskK)} · ISK lost ${fmtISK(r.iskL)} · win rate ${kp}%</div>
+          <div class="drill-cols">${mode === 'kills' ? kHTML + dHTML : dHTML + kHTML}</div>
+          <div class="cls" style="margin-top:6px">"Died to" counts each enemy ship type once per loss; FB = it landed the final blow.</div></div>`;
+      }
+      return html;
+    }).join('');
+    this.ensureTypeNames(all.flatMap(r => [r.type, ...r.killed.keys(), ...r.diedTo.keys()]));
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  EVE SSO — OAuth2 PKCE, refresh tokens kept so logins persist
+// ════════════════════════════════════════════════════════════════
+const SSO = {
+  chars() { return LS.get(KEYS.ssoChars, {}); },
+  saveChars(c) { LS.set(KEYS.ssoChars, c); },
+  clientId() { return (LS.get(KEYS.settings, {}).clientId || '').trim(); },
+  setClientId(v) { const s = LS.get(KEYS.settings, {}); s.clientId = v.trim(); LS.set(KEYS.settings, s); },
+
+  async login() {
+    const clientId = this.clientId();
+    if (!clientId) { UI.show('skills'); Skills.showSetup(true); setStatus('skills-status', 'Enter your ESI Client ID first.', true); return; }
+    const rand = n => crypto.getRandomValues(new Uint8Array(n));
+    const b64u = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const verifier = b64u(rand(32));
+    const challenge = b64u(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+    const state = b64u(rand(16));
+    LS.set('eft.pkce.pending', { verifier, state, ts: Date.now() });
+    location.href = 'https://login.eveonline.com/v2/oauth/authorize?' + new URLSearchParams({
+      response_type: 'code', redirect_uri: PAGE_URL, client_id: clientId, scope: SSO_SCOPES,
+      code_challenge: challenge, code_challenge_method: 'S256', state,
+    });
+  },
+
+  decode(jwt) {
+    const p = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return { id: parseInt(String(p.sub).split(':').pop()), name: p.name, scopes: [].concat(p.scp || []) };
+  },
+
+  store(tokens) {
+    const who = this.decode(tokens.access_token);
+    const chars = this.chars();
+    chars[who.id] = {
+      id: who.id, name: who.name, scopes: who.scopes,
+      access: tokens.access_token, exp: Date.now() + (tokens.expires_in || 1199) * 1000,
+      refresh: tokens.refresh_token || chars[who.id]?.refresh || null, needsLogin: false,
+    };
+    this.saveChars(chars);
+    return chars[who.id];
+  },
+
+  async handleCallback() {
+    const q = new URLSearchParams(location.search);
+    if (!q.get('code') && !q.get('error')) return null;
+    history.replaceState({}, '', PAGE_URL + '#skills');
+    if (q.get('error')) throw new Error('EVE login cancelled: ' + (q.get('error_description') || q.get('error')));
+    const pend = LS.get('eft.pkce.pending', null);
+    LS.del('eft.pkce.pending');
+    if (!pend || pend.state !== q.get('state')) throw new Error('Login state mismatch — please try logging in again.');
+    const r = await fetch('https://login.eveonline.com/v2/oauth/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code: q.get('code'), client_id: this.clientId(), code_verifier: pend.verifier, redirect_uri: PAGE_URL }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error('EVE login failed: ' + (j.error_description || j.error || r.status));
+    const c = this.store(j);
+    LS.set(KEYS.skillChar, c.id);
+    KB.ensure(c.id, c.name, true); // your own characters are tracked by default
+    return c;
+  },
+
+  // Returns a valid access token, refreshing it if needed. Refresh tokens rotate:
+  // the new one is saved every time. A cross-tab lock stops two tabs refreshing at once.
+  async token(charId) {
+    const fresh = () => { const c = this.chars()[charId]; return c && c.access && Date.now() < c.exp - 60000 ? c.access : null; };
+    let t = fresh(); if (t) return t;
+    const doRefresh = async () => {
+      let t2 = fresh(); if (t2) return t2;
+      const c = this.chars()[charId];
+      if (!c?.refresh) { this.markLoggedOut(charId); throw new Error(`${c?.name || 'Character'} needs to log in again.`); }
+      const r = await fetch('https://login.eveonline.com/v2/oauth/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: c.refresh, client_id: this.clientId() }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (r.status === 400 || r.status === 401) { this.markLoggedOut(charId); throw new Error(`${c.name}: login expired or was revoked — log in again.`); }
+        throw new Error('EVE login server error ' + r.status);
+      }
+      return this.store(j).access;
+    };
+    if (navigator.locks) return navigator.locks.request('eft-sso-' + charId, doRefresh);
+    return doRefresh();
+  },
+
+  markLoggedOut(charId) {
+    const chars = this.chars();
+    if (chars[charId]) { chars[charId].access = null; chars[charId].refresh = null; chars[charId].needsLogin = true; this.saveChars(chars); }
+    UI.renderAuth();
+  },
+
+  async logout(charId) {
+    const chars = this.chars(), c = chars[charId];
+    if (!c) return;
+    if (c.refresh) {   // best effort revoke
+      fetch('https://login.eveonline.com/v2/oauth/revoke', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token_type_hint: 'refresh_token', token: c.refresh, client_id: this.clientId() }),
+      }).catch(() => { });
+    }
+    delete chars[charId];
+    this.saveChars(chars);
+    Skills.cache.delete(charId);
+    if (LS.get(KEYS.skillChar) === charId) LS.del(KEYS.skillChar);
+    UI.renderAuth(); Skills.render(); Plans.renderAll();
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  SKILL MATH
+// ════════════════════════════════════════════════════════════════
+const ATTR = { 164: 'charisma', 165: 'intelligence', 166: 'memory', 167: 'perception', 168: 'willpower' };
+const ATTR_SHORT = { charisma: 'Cha', intelligence: 'Int', memory: 'Mem', perception: 'Per', willpower: 'Wil' };
+const DEFAULT_ATTRS = { charisma: 19, intelligence: 20, memory: 20, perception: 20, willpower: 20 };
+const LEVEL_SP = [0, 250, 1415, 8000, 45255, 256000];
+const sk = id => SDE.skills[id];
+const skName = id => sk(id)?.[0] || `Skill ${id}`;
+const spFor = (id, lvl) => LEVEL_SP[lvl] * (sk(id)?.[2] || 1);
+function spPerMin(id, attrs, mult = 1) {
+  const s = sk(id); if (!s) return 0;
+  return ((attrs[ATTR[s[3]]] || 0) + (attrs[ATTR[s[4]]] || 0) / 2) * mult;
+}
+// Highest level of `target` required anywhere in the prerequisite tree of `id` (memoized).
+const _reqMemo = new Map();
+function requiredLevelOf(id, target) {
+  const key = id + ':' + target;
+  if (_reqMemo.has(key)) return _reqMemo.get(key);
+  _reqMemo.set(key, 0); // cycle guard
+  let best = 0;
+  for (const [p, l] of (sk(id)?.[5] || [])) best = Math.max(best, p === target ? l : 0, requiredLevelOf(p, target));
+  _reqMemo.set(key, best);
+  return best;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  SKILLS PAGE
+// ════════════════════════════════════════════════════════════════
+const Skills = {
+  cache: new Map(), // charId -> { skills: Map(id -> {lvl, active, sp}), queue, totalSP, unallocated, attrs, implants, mult, modeNote, loaded }
+
+  showSetup(force) {
+    const hasChars = Object.keys(SSO.chars()).length > 0;
+    $('#sso-setup').style.display = force || !SSO.clientId() || !hasChars ? 'block' : 'none';
+    $('#callback-url').textContent = PAGE_URL;
+    $('#client-id').value = SSO.clientId();
+  },
+
+  activeId() {
+    const chars = SSO.chars();
+    let id = LS.get(KEYS.skillChar, null);
+    if (!chars[id]) id = Number(Object.keys(chars)[0]) || null;
+    return id;
+  },
+
+  async load(charId, force) {
+    if (!force && this.cache.get(charId)?.loaded) return this.cache.get(charId);
+    const tok = await SSO.token(charId);
+    const c = SSO.chars()[charId];
+    const hasImplantScope = (c.scopes || []).includes('esi-clones.read_implants.v1');
+    const [skills, queue, attrs, implants] = await Promise.all([
+      ESI.req(`/characters/${charId}/skills/`, { token: tok }),
+      ESI.req(`/characters/${charId}/skillqueue/`, { token: tok }),
+      ESI.req(`/characters/${charId}/attributes/`, { token: tok }),
+      hasImplantScope ? ESI.req(`/characters/${charId}/implants/`, { token: tok }).catch(() => []) : Promise.resolve([]),
+    ]);
+    const map = new Map();
+    for (const s of skills.skills || []) map.set(s.skill_id, { lvl: s.trained_skill_level, active: s.active_skill_level, sp: s.skillpoints_in_skill });
+    const base = {};
+    for (const k of Object.values(ATTR)) base[k] = attrs[k] || 17;
+    const withImpl = { ...base };
+    for (const imp of implants || []) {
+      const b = SDE.implants[imp]; if (!b) continue;
+      ['charisma', 'intelligence', 'memory', 'perception', 'willpower'].forEach((k, i) => withImpl[k] += b[i]);
+    }
+    // Calibrate against the skill currently training: picks Omega/Alpha speed and whether ESI's
+    // attribute numbers already include implants. Falls back to Omega + implants.
+    let use = withImpl, mult = 1, modeNote = 'Omega speed assumed';
+    const now = Date.now();
+    const cur = (queue || []).find(q => q.start_date && q.finish_date && Date.parse(q.start_date) <= now && Date.parse(q.finish_date) > now);
+    const mins = cur ? (Date.parse(cur.finish_date) - Date.parse(cur.start_date)) / 60000 : 0;
+    if (cur && mins > 5 && cur.level_end_sp > cur.training_start_sp) {
+      const actual = (cur.level_end_sp - cur.training_start_sp) / mins;
+      let best = null;
+      for (const [a, aName] of [[withImpl, 'with implants'], [base, 'base']]) for (const m of [1, 0.5]) {
+        const pred = spPerMin(cur.skill_id, a, m); const err = Math.abs(pred - actual) / actual;
+        if (!best || err < best.err) best = { a, m, err, aName };
+      }
+      if (best && best.err < 0.03) { use = best.a; mult = best.m; modeNote = (mult === 1 ? 'Omega' : 'Alpha (half speed)') + ' — matches your current training'; }
+      else modeNote = `Omega assumed — current training runs at ${Math.round(actual * 60)} SP/h (boosters or accelerators?)`;
+    }
+    const data = { skills: map, queue: queue || [], totalSP: skills.total_sp || 0, unallocated: skills.unallocated_sp || 0, attrs: use, implants: implants || [], mult, modeNote, loaded: Date.now() };
+    this.cache.set(charId, data);
+    return data;
+  },
+
+  renderCharSelect() {
+    const chars = Object.values(SSO.chars());
+    const id = this.activeId();
+    $('#sk-char').innerHTML = chars.length ? chars.map(c => `<option value="${c.id}">${esc(c.name)}${c.needsLogin ? ' — log in again' : ''}</option>`).join('') : '<option value="">No characters logged in</option>';
+    if (id) $('#sk-char').value = String(id);
+    $('#sk-char').disabled = !chars.length;
+    $('#sk-refresh').disabled = !chars.length;
+  },
+
+  async render(force) {
+    this.showSetup(false);
+    this.renderCharSelect();
+    const id = this.activeId();
+    if (!id) { $('#skills-content').style.display = 'none'; return; }
+    const c = SSO.chars()[id];
+    if (c.needsLogin) { $('#skills-content').style.display = 'none'; setStatus('skills-status', `${c.name}'s login expired — use + Add character to log in again.`, true); return; }
+    if (!this.cache.get(id)?.loaded || force) setStatus('skills-status', '📡 Loading skills…');
+    let d;
+    try { d = await this.load(id, force); }
+    catch (e) { setStatus('skills-status', e.message, true); return; }
+    if (this.activeId() !== id) return;
+    setStatus('skills-status', '');
+    $('#skills-content').style.display = 'block';
+    $('#sk-header').innerHTML = `<img class="char-portrait" src="${portrait(id)}" alt=""><div><div class="char-name">${esc(c.name)}</div>
+      <div class="char-corp">${fmtNum(d.totalSP)} SP · ${d.skills.size} skills${d.unallocated ? ` · ${fmtNum(d.unallocated)} unallocated` : ''}</div></div>`;
+    $('#sk-attrs').innerHTML = Object.keys(ATTR_SHORT).map(k => `<span>${ATTR_SHORT[k]} <b>${d.attrs[k]}</b></span>`).join('')
+      + (d.implants.length ? `<span>· ${d.implants.length} implant${d.implants.length > 1 ? 's' : ''}</span>` : '');
+    $('#sk-mode').textContent = d.modeNote;
+    $('#sp-label').textContent = `${fmtNum(d.totalSP)} SP`;
+    const groups = [...new Set(Object.values(SDE.skills).map(s => SDE.skillGroups[s[1]]))].sort();
+    const gSel = $('#sk-group'), gv = gSel.value;
+    gSel.innerHTML = '<option value="">All groups</option>' + groups.map(g => `<option>${esc(g)}</option>`).join('');
+    gSel.value = gv;
+    this.renderQueue(); this.renderSkills();
+  },
+
+  renderQueue() {
+    const d = this.cache.get(this.activeId()); if (!d) return;
+    const q = d.queue.filter(x => x.finish_date ? Date.parse(x.finish_date) > Date.now() : true).sort((a, b) => a.queue_position - b.queue_position);
+    if (!q.length) { $('#skill-queue').innerHTML = '<div class="empty">Queue is empty.</div>'; $('#queue-label').textContent = ''; return; }
+    const paused = !q[0].start_date;
+    const end = q[q.length - 1].finish_date ? Date.parse(q[q.length - 1].finish_date) : 0;
+    $('#queue-label').textContent = paused ? 'Queue paused' : (end ? `Ends in ${fmtDur((end - Date.now()) / 1000)} · ${fmtDateTime(end)} UTC` : '');
+    $('#skill-queue').innerHTML = q.map((s, i) => {
+      const fin = s.finish_date ? Date.parse(s.finish_date) : 0;
+      const isCur = i === 0 && !paused && s.start_date && Date.parse(s.start_date) <= Date.now();
+      return `<div class="queue-row ${isCur ? 'q-current' : ''}"><div class="q-pos">${i + 1}</div>
+        <div>${esc(skName(s.skill_id))}${isCur ? ' <span class="chip teal">training</span>' : ''}</div>
+        <div>${ROMAN[s.finished_level]}</div><div class="q-finish">${fin ? (isCur ? fmtDur((fin - Date.now()) / 1000) : fmtDate(fin)) : '—'}</div></div>`;
+    }).join('');
+  },
+
+  renderSkills() {
+    const d = this.cache.get(this.activeId()); if (!d) return;
+    const g = $('#sk-group').value, lv = +$('#sk-lvl').value, q = $('#sk-search').value.trim().toLowerCase();
+    const by = new Map();
+    for (const [id, s] of Object.entries(SDE.skills)) {
+      const mine = d.skills.get(+id);
+      const lvl = mine?.lvl || 0;
+      if (lv === -1 ? mine : lv === -2 ? false : (!mine || lvl < lv)) continue;
+      const gn = SDE.skillGroups[s[1]];
+      if (g && gn !== g) continue;
+      if (q && !s[0].toLowerCase().includes(q)) continue;
+      if (!by.has(gn)) by.set(gn, []);
+      by.get(gn).push([+id, s, mine]);
+    }
+    const html = [...by.keys()].sort().map(gn => {
+      const rows = by.get(gn).sort((a, b) => a[1][0].localeCompare(b[1][0]));
+      const gsp = rows.reduce((t, r) => t + (r[2]?.sp || 0), 0);
+      return `<div class="skill-group"><div class="skill-group-name">${esc(gn)} <span class="muted" style="font-size:10px;font-weight:normal">— ${rows.length} · ${fmtISK(gsp)} SP</span></div>` +
+        rows.map(([id, s, m]) => {
+          const pips = [1, 2, 3, 4, 5].map(n => `<div class="pip ${n <= (m?.lvl || 0) ? 'trained' : n <= (m?.active || 0) ? 'active' : ''}"></div>`).join('');
+          return `<div class="skill-row" title="${esc(s[6])}"><div>${esc(s[0])} <span class="muted" style="font-size:10px">×${s[2]}</span></div><div class="pips">${pips}</div><div class="skill-sp">${m ? fmtISK(m.sp) + ' SP' : 'not injected'}</div></div>`;
+        }).join('') + '</div>';
+    }).join('');
+    $('#skill-list').innerHTML = html || '<div class="empty">No skills match.</div>';
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  PLANS — entries are { s: skillId, l: level, t: 'Planned'|'Prerequisite', p, n, g, rm }
+// ════════════════════════════════════════════════════════════════
+const Plans = {
+  activeId: null,
+  data() { return LS.get(KEYS.plans, { schema: 1, plans: [] }); },
+  save(d) { LS.set(KEYS.plans, d); },
+  get(id) { return this.data().plans.find(p => p.id === id); },
+  update(id, fn) {
+    const d = this.data(); const p = d.plans.find(x => x.id === id); if (!p) return;
+    fn(p); p.modified = Date.now(); this.save(d); return p;
+  },
+  newId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); },
+  create(name, entries = [], extra = {}) {
+    const d = this.data();
+    const p = { id: this.newId(), name: name || 'New plan', charId: this.defaultChar(), desc: '', created: Date.now(), modified: Date.now(), entries: [], ...extra };
+    p.entries = this.normalize(entries, this.trainedFor(p.charId)).entries;
+    d.plans.push(p); this.save(d);
+    this.select(p.id);
+    return p;
+  },
+  defaultChar() { return Skills.activeId() || null; },
+  trainedFor(charId) {
+    const d = charId && Skills.cache.get(charId);
+    const t = {};
+    if (d) for (const [id, s] of d.skills) t[id] = s.lvl;
+    return t;
+  },
+
+  // Rebuilds the plan so every entry comes after everything it needs:
+  // all prerequisite skills (at their required levels) and the lower levels of the same skill.
+  // Missing ones are inserted as 'Prerequisite'. Already-trained levels are not added.
+  normalize(entries, trained) {
+    const byKey = new Map(), out = [], placed = new Set(), visiting = new Set();
+    const added = [];
+    for (const e of entries) {
+      const k = e.s + ':' + e.l;
+      const prev = byKey.get(k);
+      if (!prev) byKey.set(k, { ...e });
+      else if (e.t === 'Planned') prev.t = 'Planned';
+    }
+    const emit = (s, l, wanted) => {
+      const k = s + ':' + l;
+      if (placed.has(k) || visiting.has(k) || !sk(s)) return;
+      const existing = byKey.get(k);
+      if (!existing && (trained[s] || 0) >= l) return; // already trained, not needed
+      visiting.add(k);
+      for (const [p, pl] of sk(s)[5]) for (let L = 1; L <= pl; L++) emit(p, L, false);
+      if (l > 1) emit(s, l - 1, false);
+      visiting.delete(k);
+      let e = existing;
+      if (!e) { e = { s, l, t: wanted ? 'Planned' : 'Prerequisite', p: 3 }; added.push(e); }
+      out.push(e); placed.add(k);
+    };
+    for (const e of byKey.values()) emit(e.s, e.l, e.t !== 'Prerequisite');
+    return { entries: out, added };
+  },
+
+  add(planId, items) { // items: [[skillId, level]]
+    const p = this.get(planId); if (!p) return;
+    const trained = this.trainedFor(p.charId);
+    const entries = p.entries.slice();
+    let skipped = 0;
+    for (const [s, l] of items) {
+      if ((trained[s] || 0) >= l) { skipped++; continue; }
+      const ex = entries.find(e => e.s === s && e.l === l);
+      if (ex) ex.t = 'Planned'; else entries.push({ s, l, t: 'Planned', p: 3 });
+    }
+    const before = p.entries.length;
+    const { entries: norm } = this.normalize(entries, trained);
+    this.update(planId, x => x.entries = norm);
+    const n = norm.length - before;
+    flash(n > 0 ? `Added ${n} skill level${n > 1 ? 's' : ''} (including prerequisites).` : skipped ? 'Already trained.' : 'Already in the plan.');
+    this.renderEditor();
+  },
+
+  remove(planId, idx) {
+    const p = this.get(planId); if (!p) return;
+    const target = p.entries[idx];
+    // Anything that needs the removed level goes too.
+    const dependent = e => (e.s === target.s && e.l > target.l) || requiredLevelOf(e.s, target.s) >= target.l;
+    let keep = p.entries.filter((e, i) => i !== idx && !dependent(e));
+    const dropped = p.entries.length - 1 - keep.length;
+    // Drop prerequisites nobody needs any more.
+    const planned = keep.filter(e => e.t !== 'Prerequisite');
+    const needed = new Set();
+    const mark = (s, l) => { const k = s + ':' + l; if (needed.has(k)) return; needed.add(k); for (const [ps, pl] of sk(s)[5]) for (let L = 1; L <= pl; L++) mark(ps, L); if (l > 1) mark(s, l - 1); };
+    for (const e of planned) mark(e.s, e.l);
+    const before = keep.length;
+    keep = keep.filter(e => e.t !== 'Prerequisite' || needed.has(e.s + ':' + e.l));
+    const orphans = before - keep.length;
+    this.update(planId, x => x.entries = keep);
+    const parts = [`Removed ${skName(target.s)} ${ROMAN[target.l]}`];
+    if (dropped) parts.push(`${dropped} dependent level${dropped > 1 ? 's' : ''}`);
+    if (orphans) parts.push(`${orphans} unneeded prerequisite${orphans > 1 ? 's' : ''}`);
+    flash(parts.join(' + '));
+    this.renderEditor();
+  },
+
+  move(planId, idx, dir) {
+    const p = this.get(planId); if (!p) return;
+    const j = idx + dir; if (j < 0 || j >= p.entries.length) return;
+    const e = p.entries.slice(); [e[idx], e[j]] = [e[j], e[idx]];
+    const { entries: norm } = this.normalize(e, this.trainedFor(p.charId));
+    const moved = norm.findIndex(x => x.s === e[j].s && x.l === e[j].l) === j;
+    this.update(planId, x => x.entries = norm);
+    if (!moved) flash("Can't move it there — it would come before a skill it needs (or after one that needs it).", true);
+    this.renderEditor();
+  },
+
+  cleanTrained(planId) {
+    const p = this.get(planId); if (!p) return;
+    const t = this.trainedFor(p.charId);
+    if (!p.charId || !Skills.cache.get(p.charId)) { flash('Assign a logged-in character to this plan first.', true); return; }
+    const keep = p.entries.filter(e => (t[e.s] || 0) < e.l);
+    const n = p.entries.length - keep.length;
+    this.update(planId, x => x.entries = keep);
+    flash(n ? `Removed ${n} trained level${n > 1 ? 's' : ''}.` : 'Nothing trained to remove.');
+    this.renderEditor();
+  },
+
+  // Training-time simulation from now, skipping trained levels.
+  simulate(p) {
+    const charD = p.charId ? Skills.cache.get(p.charId) : null;
+    const attrs = charD ? charD.attrs : DEFAULT_ATTRS;
+    const mult = charD ? charD.mult : 1;
+    const t = this.trainedFor(p.charId);
+    const spHave = {}; if (charD) for (const [id, s] of charD.skills) spHave[id] = s.sp;
+    let clock = Date.now(), total = 0;
+    const rows = p.entries.map(e => {
+      if ((t[e.s] || 0) >= e.l) return { done: true };
+      const need = spFor(e.s, e.l), from = Math.max(spFor(e.s, e.l - 1), spHave[e.s] || 0);
+      const rate = spPerMin(e.s, attrs, mult);
+      const secs = rate ? Math.max(0, need - from) / rate * 60 : 0;
+      spHave[e.s] = need;
+      clock += secs * 1000; total += secs;
+      return { secs, finish: clock };
+    });
+    return { rows, total, finish: clock, attrs, mult, charD };
+  },
+
+  select(id) {
+    this.activeId = id; LS.set(KEYS.activePlan, id);
+    this.renderAll();
+  },
+
+  renderAll() { this.renderList(); this.renderPresets(); this.renderEditor(); },
+
+  renderList() {
+    const plans = this.data().plans, chars = SSO.chars();
+    if (!plans.length) { $('#plan-list').innerHTML = '<div class="empty">No plans yet.</div>'; return; }
+    const groups = new Map();
+    for (const p of plans) { const k = p.charId && chars[p.charId] ? chars[p.charId].name : 'No character'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); }
+    $('#plan-list').innerHTML = [...groups.entries()].map(([g, ps]) => `<div class="pl-hdr">${esc(g)}</div>` +
+      ps.map(p => `<div class="plan-item${p.id === this.activeId ? ' on' : ''}" data-plan="${p.id}"><div>${esc(p.name)}</div>
+        <div class="sub">${p.entries.length} entries${p.src ? ' · from preset' : ''}</div></div>`).join('')).join('');
+  },
+
+  renderPresets() {
+    $('#preset-list').innerHTML = SDE.presets.map(pr => `<div class="plan-item" data-preset="${pr.id}" title="${esc(pr.src)}">
+      <div>${esc(pr.name)}</div><div class="sub">${esc(pr.desc)} (${pr.e.length} levels)</div></div>`).join('')
+      + '<div class="muted" style="font-size:10px;margin-top:6px">Presets from the EVE University wiki (CC BY-SA 4.0). Using one makes your own editable copy.</div>';
+  },
+
+  async renderEditor() {
+    const p = this.activeId && this.get(this.activeId);
+    $('#plan-empty').style.display = p ? 'none' : 'block';
+    $('#plan-editor').style.display = p ? 'block' : 'none';
+    this.renderList();
+    if (!p) return;
+    if (document.activeElement !== $('#plan-name')) $('#plan-name').value = p.name;
+    const chars = Object.values(SSO.chars());
+    $('#plan-char').innerHTML = '<option value="">No character (default attributes)</option>' + chars.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    $('#plan-char').value = p.charId && SSO.chars()[p.charId] ? String(p.charId) : '';
+    // Make sure the assigned character's skills are loaded for accurate times.
+    let loadErr = '';
+    if (p.charId && SSO.chars()[p.charId] && !Skills.cache.get(p.charId)?.loaded && !SSO.chars()[p.charId].needsLogin && !this._loadFailed?.[p.charId]) {
+      $('#plan-attrs-note').textContent = 'Loading character skills…';
+      try { await Skills.load(p.charId); return this.renderEditor(); }
+      catch (e) { (this._loadFailed ||= {})[p.charId] = e.message; }
+    }
+    loadErr = this._loadFailed?.[p.charId] || '';
+    const sim = this.simulate(p);
+    const remaining = sim.rows.filter(r => !r.done).length;
+    $('#plan-summary').innerHTML = `<span class="chip">${p.entries.length} entries</span>
+      <span class="chip ${remaining ? 'gold' : 'green'}">${remaining} to train</span>
+      <span class="chip teal">Total ${fmtDur(sim.total)}</span>
+      ${remaining ? `<span class="chip">Done ${fmtDateTime(sim.finish)} UTC</span>` : ''}`;
+    $('#plan-attrs-note').textContent = sim.charD
+      ? `${Object.keys(ATTR_SHORT).map(k => ATTR_SHORT[k] + ' ' + sim.attrs[k]).join(' · ')}${sim.mult !== 1 ? ' · Alpha speed' : ''}`
+      : loadErr ? `⚠ ${loadErr} — using default attributes` : 'Default attributes, Omega speed';
+    $('#plan-entries').innerHTML = p.entries.length ? p.entries.map((e, i) => {
+      const r = sim.rows[i];
+      const badge = e.t === 'Prerequisite' ? '<span class="chip">prereq</span>' : '';
+      return `<div class="pe-row${r.done ? ' done' : ''}" data-idx="${i}" title="${esc(sk(e.s)?.[6] || '')}">
+        <div class="muted">${i + 1}</div>
+        <div class="nm">${esc(skName(e.s))} <b>${ROMAN[e.l]}</b> ${badge} ${r.done ? '<span class="chip green">trained</span>' : ''}${e.n ? ` <small title="${esc(e.n)}">📝</small>` : ''}</div>
+        <div class="tm">${r.done ? '' : fmtDur(r.secs)}</div>
+        <div class="tm fin">${r.done ? '' : fmtDate(r.finish)}</div>
+        <div class="acts"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button><button data-act="del" title="Remove">✕</button></div>
+      </div>`;
+    }).join('') : '<div class="empty">Empty plan — search above to add skills or a ship.</div>';
+  },
+
+  // ── Typeahead (skills and ships) ──
+  search(q) {
+    q = q.trim().toLowerCase();
+    const box = $('#plan-search-results');
+    if (q.length < 2) { box.classList.remove('open'); box.innerHTML = ''; return; }
+    const p = this.get(this.activeId); const t = this.trainedFor(p?.charId);
+    const skills = Object.entries(SDE.skills).filter(([, s]) => s[0].toLowerCase().includes(q))
+      .sort((a, b) => a[1][0].toLowerCase().indexOf(q) - b[1][0].toLowerCase().indexOf(q) || a[1][0].localeCompare(b[1][0])).slice(0, 25);
+    const ships = Object.entries(SDE.ships).filter(([, s]) => s[0].toLowerCase().includes(q) && s[2].length)
+      .sort((a, b) => a[1][0].toLowerCase().indexOf(q) - b[1][0].toLowerCase().indexOf(q) || a[1][0].localeCompare(b[1][0])).slice(0, 10);
+    box.innerHTML = skills.map(([id, s]) => {
+      const have = t[id] || 0;
+      return `<div class="ta-item"><div class="grow"><div>${esc(s[0])} <span class="muted" style="font-size:10px">×${s[2]}</span></div>
+        <div class="sub">${esc(SDE.skillGroups[s[1]])}${have ? ` · trained ${ROMAN[have]}` : ''}</div></div>
+        <div class="lvl-btns">${[1, 2, 3, 4, 5].map(l => `<button data-skill="${id}" data-lvl="${l}" class="${l <= have ? 'have' : ''}">${ROMAN[l]}</button>`).join('')}</div></div>`;
+    }).join('') + ships.map(([id, s]) => `<div class="ta-item" data-ship="${id}"><img src="${typeIcon(id)}" width="24" height="24" alt="">
+        <div class="grow"><div>🚀 ${esc(s[0])}</div><div class="sub">${esc(SDE.typeGroups[s[1]])} — add skills to fly it: ${s[2].map(([sid, l]) => esc(skName(sid)) + ' ' + ROMAN[l]).join(', ')}</div></div></div>`).join('')
+      || '<div class="ta-item muted">No matches.</div>';
+    box.classList.add('open');
+  },
+
+  // ── EVEMon import/export ──
+  toEVEMonXML(p) {
+    const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const so = p.sorting || { criteria: 'None', order: 'None', groupByPriority: false };
+    const lines = [
+      '<?xml version="1.0" encoding="utf-8"?>',
+      `<plan xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="${x(p.name)}" owner="${x(p.owner || '00000000-0000-0000-0000-000000000000')}"${p.desc ? ` description="${x(p.desc)}"` : ''} revision="${p.revision || 4986}">`,
+      `  <sorting criteria="${x(so.criteria)}" order="${x(so.order)}" groupByPriority="${so.groupByPriority ? 'true' : 'false'}" />`,
+    ];
+    for (const e of p.entries) {
+      lines.push(`  <entry skillID="${e.s}" skill="${x(skName(e.s))}" level="${e.l}" priority="${e.p ?? 3}" type="${e.t === 'Prerequisite' ? 'Prerequisite' : 'Planned'}">`);
+      if (e.n) lines.push(`    <notes>${x(e.n)}</notes>`);
+      for (const g of e.g || []) lines.push(`    <group>${x(g)}</group>`);
+      if (e.rm) lines.push(`    <remapping${Object.entries(e.rm).map(([k, v]) => ` ${k}="${x(v)}"`).join('')} />`);
+      lines.push('  </entry>');
+    }
+    lines.push('</plan>');
+    return lines.join('\r\n');
+  },
+
+  parseEVEMon(xmlText) {
+    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('Not a valid XML plan file.');
+    const root = doc.documentElement;
+    const planEls = root.nodeName === 'plans' ? [...root.children].filter(c => c.nodeName === 'plan') : root.nodeName === 'plan' ? [root] : [];
+    if (!planEls.length) throw new Error('No <plan> found in this file.');
+    const byName = new Map(Object.entries(SDE.skills).map(([id, s]) => [s[0].toLowerCase(), +id]));
+    return planEls.map(pe => {
+      const bad = [];
+      const entries = [...pe.children].filter(c => c.nodeName === 'entry').map(en => {
+        let s = +en.getAttribute('skillID');
+        if (!sk(s)) s = byName.get((en.getAttribute('skill') || '').toLowerCase());
+        const l = +en.getAttribute('level');
+        if (!s || !(l >= 1 && l <= 5)) { bad.push(en.getAttribute('skill') || en.getAttribute('skillID')); return null; }
+        const kid = n => [...en.children].filter(c => c.nodeName === n);
+        const rmEl = kid('remapping')[0];
+        const e = { s, l, t: en.getAttribute('type') === 'Prerequisite' ? 'Prerequisite' : 'Planned', p: +(en.getAttribute('priority') || 3) };
+        const notes = kid('notes')[0]?.textContent; if (notes) e.n = notes;
+        const groups = kid('group').map(g => g.textContent).filter(Boolean); if (groups.length) e.g = groups;
+        if (rmEl) { e.rm = {}; for (const a of rmEl.attributes) e.rm[a.name] = a.value; }
+        return e;
+      }).filter(Boolean);
+      const sEl = [...pe.children].find(c => c.nodeName === 'sorting');
+      return {
+        name: pe.getAttribute('name') || 'Imported plan', desc: pe.getAttribute('description') || '',
+        owner: pe.getAttribute('owner') || undefined, revision: +(root.getAttribute('revision') || pe.getAttribute('revision') || 0) || undefined,
+        sorting: sEl ? { criteria: sEl.getAttribute('criteria') || 'None', order: sEl.getAttribute('order') || 'None', groupByPriority: sEl.getAttribute('groupByPriority') === 'true' } : undefined,
+        entries, bad,
+      };
+    });
+  },
+
+  parseText(text) {
+    const byName = new Map(Object.entries(SDE.skills).map(([id, s]) => [s[0].toLowerCase(), +id]));
+    const rn = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
+    const entries = [], bad = [];
+    for (let line of text.split(/\r?\n/)) {
+      line = line.replace(/\(.*?\)\s*$/, '').replace(/^\s*\d+\.\s*/, '').replace(/^[-*•]\s*/, '').trim();
+      if (!line) continue;
+      const m = line.match(/^(.+?)\s+([1-5]|I{1,3}|IV|V)$/i);
+      const s = m && byName.get(m[1].trim().toLowerCase());
+      if (!s) { bad.push(line); continue; }
+      entries.push({ s, l: /\d/.test(m[2]) ? +m[2] : rn[m[2].toLowerCase()], t: 'Planned', p: 3 });
+    }
+    return [{ name: 'Imported plan', entries, bad }];
+  },
+
+  async readFile(file) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (buf[0] === 0x1f && buf[1] === 0x8b) { // gzip (.emp)
+      if (!window.DecompressionStream) throw new Error('This browser cannot open .emp files; export as .xml from EVEMon instead.');
+      const ds = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return await new Response(ds).text();
+    }
+    return new TextDecoder().decode(buf).replace(/^﻿/, '');
+  },
+
+  async importText(text) {
+    const parsed = /^\s*</.test(text) ? this.parseEVEMon(text) : this.parseText(text);
+    let lastId = null, warn = [];
+    for (const pl of parsed) {
+      if (!pl.entries.length) { warn.push(`"${pl.name}" had no recognizable skills`); continue; }
+      const { bad, entries, ...rest } = pl;
+      const before = entries.length;
+      const p = this.create(pl.name, entries, rest);
+      lastId = p.id;
+      const added = p.entries.length - before;
+      if (added > 0) warn.push(`added ${added} missing prerequisite level${added > 1 ? 's' : ''} to "${p.name}"`);
+      if (bad.length) warn.push(`skipped ${bad.length} unknown line${bad.length > 1 ? 's' : ''}: ${bad.slice(0, 3).join(', ')}${bad.length > 3 ? '…' : ''}`);
+    }
+    if (lastId) this.select(lastId);
+    flash(`Imported ${parsed.length} plan${parsed.length > 1 ? 's' : ''}${warn.length ? ' — ' + warn.join('; ') : ''}.`, !lastId);
+  },
+
+  download(name, data, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
+    a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  },
+  fileName(p, ext) { return (p.name || 'plan').replace(/[\\/:*?"<>|]+/g, '_') + ext; },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  CHAR SETS — accounts, usage groups, conflicts, one-per-account picking
+//  Stored under KEYS.charsets: { schema:1, groups:[{id,name,color,conflicts:[gid],excl,notes}],
+//                               chars:[{id,name,eveId,account,main,color,groups:[gid],conflicts:[gid],locked,loc,notes}] }
+// ════════════════════════════════════════════════════════════════
+const XLSX = {
+  _crcT: null,
+  crc32(b) {
+    if (!this._crcT) { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } this._crcT = t; }
+    let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = this._crcT[(c ^ b[i]) & 255] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  },
+  zip(files) { // stored (uncompressed) zip — every spreadsheet app reads it
+    const enc = new TextEncoder(), out = [], cd = []; let off = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = this.crc32(data);
+      const h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+      h.setUint16(10, 0, true); h.setUint16(12, 33, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true);
+      h.setUint32(22, data.length, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+      out.push(new Uint8Array(h.buffer), name, data);
+      const c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+      c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 33, true); c.setUint32(16, crc, true);
+      c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+      c.setUint32(42, off, true);
+      cd.push(new Uint8Array(c.buffer), name);
+      off += 30 + name.length + data.length;
+    }
+    const cdSize = cd.reduce((s, a) => s + a.length, 0);
+    const e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+    e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+    return new Blob([...out, ...cd, new Uint8Array(e.buffer)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  },
+  async unzip(buf) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength), dec = new TextDecoder();
+    let eo = -1;
+    for (let i = buf.length - 22; i >= Math.max(0, buf.length - 70000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eo = i; break; }
+    if (eo < 0) throw new Error('Not a valid .xlsx file.');
+    const n = dv.getUint16(eo + 10, true); let p = dv.getUint32(eo + 16, true);
+    const files = {};
+    for (let k = 0; k < n; k++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+      const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+      const name = dec.decode(buf.subarray(p + 46, p + 46 + nl));
+      const ds = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true);
+      const raw = buf.subarray(ds, ds + csize);
+      files[name] = { method, raw };
+      p += 46 + nl + xl + cl;
+    }
+    const read = async name => {
+      const f = files[name]; if (!f) return null;
+      if (f.method === 0) return dec.decode(f.raw);
+      if (f.method !== 8) throw new Error('Unsupported compression in .xlsx');
+      if (!window.DecompressionStream) throw new Error('This browser cannot read .xlsx files; use .csv instead.');
+      return await new Response(new Blob([f.raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+    };
+    return { names: Object.keys(files), read };
+  },
+  esc: s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''),
+  col: i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; },
+  // sheets: [{ name, widths:[], rows:[[cell]], validations:[{col, list:[..]}] }]; cell = string | { v, fill:'#rrggbb', bold }
+  build(sheets) {
+    const fills = [], fillIdx = new Map();
+    const xfs = [{ fill: 0, font: 0 }, { fill: 0, font: 1 }]; const xfIdx = new Map([['0:0', 0], ['0:1', 1]]);
+    const styleOf = c => {
+      if (typeof c !== 'object' || c === null) return 0;
+      let fi = 0, font = c.bold ? 1 : 0;
+      if (c.fill && /^#[0-9a-f]{6}$/i.test(c.fill)) {
+        const k = c.fill.toUpperCase();
+        if (!fillIdx.has(k)) { fillIdx.set(k, fills.length + 2); fills.push(k); }
+        fi = fillIdx.get(k); font = textOn(k) === '#ffffff' ? 2 : (c.bold ? 1 : 0);
+      }
+      const key = fi + ':' + font;
+      if (!xfIdx.has(key)) { xfIdx.set(key, xfs.length); xfs.push({ fill: fi, font }); }
+      return xfIdx.get(key);
+    };
+    const sheetXML = sh => {
+      const rows = sh.rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((c, ci) => {
+        const v = typeof c === 'object' && c !== null ? c.v : c; const s = styleOf(c);
+        if (v === '' || v == null) return s ? `<c r="${this.col(ci)}${ri + 1}" s="${s}"/>` : '';
+        return `<c r="${this.col(ci)}${ri + 1}" t="inlineStr"${s ? ` s="${s}"` : ''}><is><t xml:space="preserve">${this.esc(v)}</t></is></c>`;
+      }).join('') + '</row>').join('');
+      const cols = sh.widths ? `<cols>${sh.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
+      const dv = sh.validations?.length ? `<dataValidations count="${sh.validations.length}">${sh.validations.map(v =>
+        `<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="${this.col(v.col)}2:${this.col(v.col)}2000"><formula1>"${this.esc(v.list.join(','))}"</formula1></dataValidation>`).join('')}</dataValidations>` : '';
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+        + `<sheetViews><sheetView workbookViewId="0"${sh.frozen === false ? '' : ''}>${sh.frozen === false ? '' : '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'}</sheetView></sheetViews>`
+        + `<sheetFormatPr defaultRowHeight="15"/>${cols}<sheetData>${rows}</sheetData>${dv}</worksheet>`;
+    };
+    const sheetFiles = sheets.map((sh, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXML(sh) }));
+    const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+      + `<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>`
+      + `<fills count="${fills.length + 2}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fills.map(f => `<fill><patternFill patternType="solid"><fgColor rgb="FF${f.slice(1)}"/><bgColor indexed="64"/></patternFill></fill>`).join('')}</fills>`
+      + `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`
+      + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`
+      + `<cellXfs count="${xfs.length}">${xfs.map(x => `<xf numFmtId="0" fontId="${x.font}" fillId="${x.fill}" borderId="0" xfId="0"${x.fill ? ' applyFill="1"' : ''}${x.font ? ' applyFont="1"' : ''}/>`).join('')}</cellXfs>`
+      + `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+    const files = [
+      { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheetFiles.map(f => `<Override PartName="/${f.name}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+      { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+      { name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((sh, i) => `<sheet name="${this.esc(sh.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>` },
+      { name: 'xl/_rels/workbook.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((sh, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+      { name: 'xl/styles.xml', data: styles },
+      ...sheetFiles,
+    ];
+    return this.zip(files);
+  },
+  // Returns { sheetName: [[cellText]] }
+  async parse(buf) {
+    const z = await this.unzip(buf);
+    const P = t => new DOMParser().parseFromString(t, 'application/xml');
+    const all = (doc, tag) => [...doc.getElementsByTagNameNS('*', tag)];
+    const wb = P(await z.read('xl/workbook.xml') || '');
+    const relsDoc = P(await z.read('xl/_rels/workbook.xml.rels') || '<x/>');
+    const rels = {}; for (const r of all(relsDoc, 'Relationship')) rels[r.getAttribute('Id')] = r.getAttribute('Target');
+    const sstText = await z.read('xl/sharedStrings.xml');
+    const sst = sstText ? all(P(sstText), 'si').map(si => all(si, 't').map(t => t.textContent).join('')) : [];
+    const out = {};
+    for (const sh of all(wb, 'sheet')) {
+      const rid = sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+      let target = rels[rid] || ''; target = target.startsWith('/') ? target.slice(1) : 'xl/' + target.replace(/^\.\//, '');
+      const txt = await z.read(target); if (!txt) continue;
+      const rows = [];
+      for (const r of all(P(txt), 'row')) {
+        const ri = (+r.getAttribute('r') || rows.length + 1) - 1; const row = [];
+        for (const c of [...r.children].filter(x => x.localName === 'c')) {
+          const ref = c.getAttribute('r') || ''; const letters = (ref.match(/^[A-Z]+/) || [''])[0];
+          let ci = row.length; if (letters) { ci = 0; for (const ch of letters) ci = ci * 26 + ch.charCodeAt(0) - 64; ci--; }
+          const t = c.getAttribute('t'); const v = all(c, 'v')[0]?.textContent ?? '';
+          let val = t === 's' ? (sst[+v] ?? '') : t === 'inlineStr' ? all(c, 't').map(x => x.textContent).join('') : t === 'b' ? (v === '1' ? 'TRUE' : 'FALSE') : v;
+          row[ci] = val;
+        }
+        rows[ri] = row;
+      }
+      out[sh.getAttribute('name')] = rows.map(r => r ? Array.from(r, x => x ?? '') : []);
+    }
+    return out;
+  },
+};
+
+function parseCSV(text) {
+  const rows = []; let row = [], cur = '', q = false;
+  text = text.replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+    else cur += ch;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+function textOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return '#ffffff';
+  const n = parseInt(m[1], 16), r = n >> 16, g = n >> 8 & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#0a0e14' : '#ffffff';
+}
+
+const CS = {
+  sub: 'sets', editId: null, editGid: null, pick: new Set(),
+  DEFAULT_COLOR: '#2a4a6a',
+  uid: p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+
+  data() {
+    let d = LS.get(KEYS.charsets, null);
+    if (!d || typeof d !== 'object') { d = this.seed(); LS.set(KEYS.charsets, d); }
+    d.schema ||= 1; d.groups ||= []; d.chars ||= [];
+    for (const g of d.groups) { g.conflicts ||= []; g.color ||= '#2e6fb5'; }
+    for (const c of d.chars) { c.groups ||= []; c.conflicts ||= []; c.account ||= 'Account 1'; }
+    return d;
+  },
+  save(d) { LS.set(KEYS.charsets, d); },
+  // Starter groups on first use only — rename or delete freely.
+  seed() {
+    const mk = (name, color, extra = {}) => ({ id: this.uid('g'), name, color, conflicts: [], excl: false, notes: '', ...extra });
+    const g = [mk('Miner', '#b8860b'), mk('Empire Miner', '#c9a227'), mk('Null Miner', '#7a5c12'), mk('Ratter', '#a83232'),
+      mk('Null Ratter', '#6e1f1f'), mk('Missioner', '#2e6fb5'), mk('Pocket Missioner', '#6a3fb5'), mk('Lowsec PvP', '#d35400')];
+    const by = n => g.find(x => x.name === n).id;
+    g.find(x => x.name === 'Pocket Missioner').conflicts = [by('Ratter'), by('Null Ratter')];
+    g.find(x => x.name === 'Pocket Missioner').notes = 'Pirate standings: never rat these pirates';
+    return { schema: 1, groups: g, chars: [] };
+  },
+
+  group(d, id) { return d.groups.find(g => g.id === id); },
+  accounts(d) { const a = []; for (const c of d.chars) if (!a.includes(c.account)) a.push(c.account); return a; },
+  isMain(d, c) {
+    const acct = d.chars.filter(x => x.account === c.account);
+    return acct.some(x => x.main) ? !!c.main : acct[0] === c;
+  },
+  plateColor(d, c) { return c.color || this.group(d, c.groups[0])?.color || this.DEFAULT_COLOR; },
+  groupsConflict(d, a, b) { const ga = this.group(d, a), gb = this.group(d, b); return !!(ga && gb && (ga.conflicts.includes(b) || gb.conflicts.includes(a))); },
+  // Why this character can't take on group `gid` (empty list = free to use).
+  blockers(d, c, gid) {
+    const t = this.group(d, gid), why = [];
+    if (c.locked) why.push('🔒 dedicated');
+    for (const g of c.groups) { if (g === gid) continue; const G = this.group(d, g); if (G?.excl) why.push(`🔒 dedicated to ${G.name}`); }
+    if (c.conflicts.includes(gid)) why.push(`⛔ marked: no ${t?.name}`);
+    for (const g of c.groups) if (g !== gid && this.groupsConflict(d, g, gid)) why.push(`⛔ ${this.group(d, g).name} conflicts`);
+    return why;
+  },
+  nextAccountName(d) { let n = 1; const a = new Set(this.accounts(d)); while (a.has('Account ' + n)) n++; return 'Account ' + n; },
+
+  // ── rendering ──
+  render() {
+    $$('#cs-sub button').forEach(b => b.classList.toggle('on', b.dataset.v === this.sub));
+    $$('.cs-pane').forEach(p => p.style.display = p.id === 'cs-' + this.sub ? 'block' : 'none');
+    const d = this.data();
+    $('#cs-accounts').innerHTML = this.accounts(d).map(a => `<option value="${esc(a)}">`).join('');
+    if (this.sub === 'sets') this.renderSets(d);
+    if (this.sub === 'chars') { this.renderCharList(d); this.renderForm(d); }
+    if (this.sub === 'groups') { this.renderGroupList(d); this.renderGroupForm(d); }
+  },
+
+  plate(d, c, { pick = false, why = [], dim = false } = {}) {
+    const col = this.plateColor(d, c), fg = textOn(col);
+    const tags = c.groups.map(g => this.group(d, g)).filter(Boolean).map(g => `<span class="ptag" style="background:${g.color}">${esc(g.name)}</span>`).join('')
+      + c.conflicts.map(g => this.group(d, g)).filter(Boolean).map(g => `<span class="ptag bad">no ${esc(g.name)}</span>`).join('')
+      + (c.locked ? '<span class="ptag">🔒 dedicated</span>' : '');
+    const main = this.isMain(d, c);
+    const taken = pick && [...this.pick].some(id => id !== c.id && d.chars.find(x => x.id === id)?.account === c.account);
+    const img = c.eveId ? `<img src="${portrait(c.eveId, 64)}" alt="" data-pilot="${c.eveId}" title="Open killboard">` : `<img alt="" title="${c.eveId === 0 ? 'Name not found in EVE' : ''}">`;
+    return `<div class="plate${dim ? ' dim' : ''}" style="background:${col};color:${fg}" data-cid="${c.id}">
+      ${pick ? `<input type="checkbox" class="cs-use" data-cid="${c.id}" ${this.pick.has(c.id) ? 'checked' : ''} ${taken ? 'disabled title="Another character on this account is already selected"' : ''}>` : ''}
+      ${img}<div class="grow"><div class="pn">${esc(c.name)}${c.eveId === 0 ? ' ⚠' : ''}</div>
+      <div class="pm">${esc(c.account)} · ${main ? '★ main' : 'alt'}${c.loc ? ' · 📍 ' + esc(c.loc) : ''}</div>
+      <div class="ptags">${tags}</div>${why.length ? `<div class="why">${why.map(esc).join(' · ')}</div>` : ''}</div></div>`;
+  },
+
+  byAccount(d, list, fn) {
+    const accts = this.accounts(d); const out = [];
+    for (const a of accts) {
+      const cs = list.filter(c => c.account === a); if (!cs.length) continue;
+      out.push(fn(a, cs));
+    }
+    return out.join('');
+  },
+
+  renderSets(d) {
+    const sel = $('#cs-set'), prev = sel.value || LS.get(KEYS.ui, {}).csSet || 'all';
+    const count = gid => d.chars.filter(c => c.groups.includes(gid)).length;
+    sel.innerHTML = `<option value="all">All characters (${d.chars.length})</option>`
+      + `<optgroup label="Groups">${d.groups.map(g => `<option value="${g.id}">${esc(g.name)} (${count(g.id)})</option>`).join('')}</optgroup>`
+      + `<option value="none">Not in any group (${d.chars.filter(c => !c.groups.length).length})</option>`;
+    sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'all';
+    const v = sel.value, g = this.group(d, v);
+    $('#cs-find-wrap').style.display = g ? '' : 'none';
+    if (!d.chars.length) {
+      $('#cs-plates').innerHTML = '<div class="sso-info">No characters yet. Add them in the <b>Characters</b> tab (or paste a whole list there), or fill in the <b>Blank template</b> spreadsheet and import it.</div>';
+      $('#cs-set-info').textContent = ''; this.renderPick(d); return;
+    }
+    const members = v === 'all' ? d.chars : v === 'none' ? d.chars.filter(c => !c.groups.length) : d.chars.filter(c => c.groups.includes(v));
+    const pick = !!g;
+    const section = list => this.byAccount(d, list, (a, cs) => {
+      const multi = pick && cs.length > 1 ? `<span class="warn">⚠ ${cs.length} on this account — only one can be logged in at a time</span>` : '';
+      return `<div class="acct-hdr">${esc(a)} ${multi}</div><div class="plates">${cs.map(c => this.plate(d, c, { pick })).join('')}</div>`;
+    });
+    let html = members.length ? section(members) : '<div class="empty">Nobody in this set yet.</div>';
+    if (g) {
+      const accts = new Set(members.map(c => c.account));
+      $('#cs-set-info').textContent = `${members.length} character${members.length === 1 ? '' : 's'} on ${accts.size} account${accts.size === 1 ? '' : 's'} — at most ${accts.size} can be online together.${g.excl ? ' 🔒 Dedicated group.' : ''}`;
+      if ($('#cs-find').checked) {
+        const others = d.chars.filter(c => !c.groups.includes(v));
+        const free = others.filter(c => !this.blockers(d, c, v).length), blocked = others.filter(c => this.blockers(d, c, v).length);
+        const freeAcct = free.filter(c => !accts.has(c.account));
+        html += `<div class="sect-hdr">Could also do ${esc(g.name)} (${free.length})</div>`
+          + `<div class="muted" style="font-size:11px">No conflicts and not dedicated elsewhere. ${freeAcct.length} of them are on accounts with nobody in this set yet.</div>`
+          + (free.length ? `<div class="plates" style="margin-top:6px">${free.sort((a, b) => accts.has(a.account) - accts.has(b.account)).map(c => this.plate(d, c, { pick: true, why: accts.has(c.account) ? ['shares an account with a member'] : [] })).join('')}</div>` : '<div class="empty">Nobody free.</div>')
+          + `<div class="sect-hdr">Blocked (${blocked.length})</div>`
+          + (blocked.length ? `<div class="plates">${blocked.map(c => this.plate(d, c, { why: this.blockers(d, c, v), dim: true })).join('')}</div>` : '<div class="empty">None.</div>');
+      }
+    } else $('#cs-set-info').textContent = `${d.chars.length} characters on ${this.accounts(d).length} accounts.`;
+    $('#cs-plates').innerHTML = html;
+    this.renderPick(d);
+  },
+
+  renderPick(d) {
+    const bar = $('#cs-pickbar');
+    const chosen = [...this.pick].map(id => d.chars.find(c => c.id === id)).filter(Boolean);
+    this.pick = new Set(chosen.map(c => c.id));
+    const g = this.group(d, $('#cs-set').value);
+    if (!g) { bar.style.display = 'none'; return; }
+    bar.style.display = 'block';
+    bar.innerHTML = `<div class="row"><b class="teal">Use together:</b> ${chosen.length ? chosen.map(c => esc(c.name)).join(', ') : '<span class="muted">tick characters — one per account</span>'}
+      <span class="grow"></span><button class="btn sm ghost" id="cs-autopick" title="One per account: the main if it's in the set, otherwise the first listed">Auto-pick</button>
+      <button class="btn sm ghost" id="cs-copy" ${chosen.length ? '' : 'disabled'}>⧉ Copy names</button>
+      <button class="btn sm ghost" id="cs-clear" ${chosen.length ? '' : 'disabled'}>Clear</button></div>`;
+  },
+
+  autoPick() {
+    const d = this.data(), v = $('#cs-set').value;
+    const members = d.chars.filter(c => c.groups.includes(v));
+    this.pick = new Set();
+    for (const a of this.accounts(d)) {
+      const cs = members.filter(c => c.account === a); if (!cs.length) continue;
+      this.pick.add((cs.find(c => this.isMain(d, c)) || cs[0]).id);
+    }
+    this.renderSets(d);
+  },
+
+  renderCharList(d) {
+    const q = $('#cs-c-search').value.trim().toLowerCase();
+    const list = q ? d.chars.filter(c => c.name.toLowerCase().includes(q) || c.account.toLowerCase().includes(q)) : d.chars;
+    $('#cs-c-list').innerHTML = list.length ? this.byAccount(d, list, (a, cs) => `<div class="pl-hdr">${esc(a)}</div>` + cs.map(c =>
+      `<div class="cs-list-row${c.id === this.editId ? ' on' : ''}" data-cid="${c.id}"><span class="sw" style="background:${this.plateColor(d, c)}"></span>
+        <span class="grow">${esc(c.name)} ${this.isMain(d, c) ? '<span class="chip gold">main</span>' : ''}</span>
+        <span class="muted" style="font-size:11px">${c.groups.length}</span></div>`).join(''))
+      : '<div class="empty">No characters yet.</div>';
+  },
+
+  formGroupsState() {
+    return { groups: $$('#cs-f-groups input:checked').map(i => i.value), conf: $('#cs-f-hasconf').checked ? $$('#cs-f-conf input:checked').map(i => i.value) : [] };
+  },
+  renderFormChecks(d, st) {
+    // A group can't be ticked if it conflicts with another ticked group or is in this char's own "no" list.
+    const dot = g => `<span class="dot" style="background:${g.color}"></span>`;
+    $('#cs-f-groups').innerHTML = d.groups.length ? d.groups.map(g => {
+      const on = st.groups.includes(g.id);
+      const clash = st.groups.find(o => o !== g.id && this.groupsConflict(d, o, g.id));
+      const why = st.conf.includes(g.id) ? `marked as a conflict for this character` : clash ? `conflicts with ${this.group(d, clash).name}` : '';
+      const off = !on && why;
+      return `<label class="${off ? 'off' : ''}" title="${esc(why)}"><input type="checkbox" value="${g.id}" ${on ? 'checked' : ''} ${off ? 'disabled' : ''}>${dot(g)}${esc(g.name)}</label>`;
+    }).join('') : '<span class="muted">Create groups in the Groups tab first.</span>';
+    $('#cs-f-conf').style.display = $('#cs-f-hasconf').checked ? 'flex' : 'none';
+    $('#cs-f-conf').innerHTML = d.groups.map(g => {
+      const inIt = st.groups.includes(g.id);
+      return `<label class="${inIt ? 'off' : ''}" title="${inIt ? 'Character is in this group' : ''}"><input type="checkbox" value="${g.id}" ${st.conf.includes(g.id) ? 'checked' : ''} ${inIt ? 'disabled' : ''}>${dot(g)}${esc(g.name)}</label>`;
+    }).join('');
+  },
+  renderForm(d) {
+    const c = d.chars.find(x => x.id === this.editId);
+    $('#cs-f-title').textContent = c ? `Edit ${c.name}` : 'Add character';
+    $('#cs-f-del').style.display = c ? '' : 'none';
+    $('#cs-f-name').value = c?.name || '';
+    $('#cs-f-account').value = c?.account || (this._lastAccount || '');
+    $('#cs-f-main').checked = c ? !!c.main : false;
+    $('#cs-f-gcolor').checked = !c?.color;
+    $('#cs-f-color').value = c?.color || (c ? this.plateColor(d, c) : this.DEFAULT_COLOR);
+    $('#cs-f-hasconf').checked = !!c?.conflicts.length;
+    $('#cs-f-locked').checked = !!c?.locked;
+    $('#cs-f-loc').value = c?.loc || ''; $('#cs-f-notes').value = c?.notes || '';
+    $('#cs-f-msg').textContent = '';
+    this.renderFormChecks(d, { groups: c?.groups || [], conf: c?.conflicts || [] });
+    $('#cs-bulk-group').innerHTML = '<option value="">— none —</option>' + d.groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  },
+
+  saveChar() {
+    const d = this.data();
+    const name = $('#cs-f-name').value.trim();
+    if (!name) { $('#cs-f-msg').textContent = 'Name required.'; return; }
+    if (d.chars.some(c => c.id !== this.editId && c.name.toLowerCase() === name.toLowerCase())) { $('#cs-f-msg').textContent = 'That name already exists.'; return; }
+    let c = d.chars.find(x => x.id === this.editId);
+    const isNew = !c;
+    if (!c) { c = { id: this.uid('c'), groups: [], conflicts: [] }; d.chars.push(c); }
+    const nameChanged = c.name && c.name.toLowerCase() !== name.toLowerCase();
+    c.name = name;
+    c.account = $('#cs-f-account').value.trim() || this.nextAccountName(d);
+    const st = this.formGroupsState();
+    c.groups = st.groups; c.conflicts = st.conf;
+    c.color = $('#cs-f-gcolor').checked ? null : $('#cs-f-color').value;
+    c.locked = $('#cs-f-locked').checked; c.loc = $('#cs-f-loc').value.trim(); c.notes = $('#cs-f-notes').value.trim();
+    c.main = $('#cs-f-main').checked;
+    if (c.main) for (const o of d.chars) if (o !== c && o.account === c.account) o.main = false;
+    if (nameChanged || isNew) delete c.eveId;
+    this.save(d);
+    this._lastAccount = c.account;
+    this.editId = isNew ? null : c.id;
+    flash(isNew ? `Added ${name}.` : `Saved ${name}.`);
+    this.render();
+    if (isNew) $('#cs-f-name').focus();
+    this.resolveIds();
+  },
+
+  bulkAdd() {
+    const d = this.data(), gid = $('#cs-bulk-group').value;
+    const blocks = $('#cs-bulk').value.split(/\n\s*\n/).map(b => b.split('\n').map(x => x.trim()).filter(Boolean)).filter(b => b.length);
+    let added = 0, dup = [];
+    for (const b of blocks) {
+      let label = null;
+      if (b[0].startsWith('#')) label = b.shift().replace(/^#+\s*/, '').trim();
+      if (!b.length) continue;
+      const acct = label || this.nextAccountName(d);
+      const hadMain = d.chars.some(c => c.account === acct && c.main);
+      b.forEach((name, i) => {
+        if (d.chars.some(c => c.name.toLowerCase() === name.toLowerCase())) { dup.push(name); return; }
+        d.chars.push({ id: this.uid('c'), name, account: acct, main: i === 0 && !hadMain, color: null, groups: gid ? [gid] : [], conflicts: [], locked: false, loc: '', notes: '' });
+        added++;
+      });
+    }
+    this.save(d);
+    $('#cs-bulk').value = '';
+    flash(`Added ${added} character${added === 1 ? '' : 's'}${dup.length ? ` · skipped ${dup.length} already listed` : ''}.`);
+    this.render(); this.resolveIds();
+  },
+
+  renderGroupList(d) {
+    $('#cs-g-list').innerHTML = d.groups.length ? d.groups.map(g => {
+      const n = d.chars.filter(c => c.groups.includes(g.id)).length;
+      const conf = d.groups.filter(o => this.groupsConflict(d, g.id, o.id)).map(o => o.name);
+      return `<div class="cs-list-row${g.id === this.editGid ? ' on' : ''}" data-gid="${g.id}"><span class="sw" style="background:${g.color}"></span>
+        <span class="grow">${esc(g.name)}${g.excl ? ' 🔒' : ''}${conf.length ? `<div class="muted" style="font-size:10px">⛔ ${conf.map(esc).join(', ')}</div>` : ''}</span><span class="muted">${n}</span></div>`;
+    }).join('') : '<div class="empty">No groups yet.</div>';
+  },
+  renderGroupForm(d) {
+    const g = this.group(d, this.editGid);
+    $('#cs-g-title').textContent = g ? `Edit ${g.name}` : 'New group';
+    $('#cs-g-del').style.display = g ? '' : 'none';
+    $('#cs-g-name').value = g?.name || ''; $('#cs-g-color').value = g?.color || '#2e6fb5';
+    $('#cs-g-excl').checked = !!g?.excl; $('#cs-g-notes').value = g?.notes || ''; $('#cs-g-msg').textContent = '';
+    $('#cs-g-conf').innerHTML = d.groups.filter(o => o.id !== this.editGid).map(o =>
+      `<label><input type="checkbox" value="${o.id}" ${g && this.groupsConflict(d, g.id, o.id) ? 'checked' : ''}><span class="dot" style="background:${o.color}"></span>${esc(o.name)}</label>`).join('') || '<span class="muted">No other groups yet.</span>';
+  },
+  saveGroup() {
+    const d = this.data(), name = $('#cs-g-name').value.trim();
+    if (!name) { $('#cs-g-msg').textContent = 'Name required.'; return; }
+    if (d.groups.some(g => g.id !== this.editGid && g.name.toLowerCase() === name.toLowerCase())) { $('#cs-g-msg').textContent = 'That group already exists.'; return; }
+    let g = this.group(d, this.editGid);
+    if (!g) { g = { id: this.uid('g'), conflicts: [] }; d.groups.push(g); }
+    g.name = name; g.color = $('#cs-g-color').value; g.excl = $('#cs-g-excl').checked; g.notes = $('#cs-g-notes').value.trim();
+    const conf = $$('#cs-g-conf input:checked').map(i => i.value);
+    g.conflicts = conf;
+    for (const o of d.groups) if (o !== g && !conf.includes(o.id)) o.conflicts = o.conflicts.filter(x => x !== g.id); // keep symmetric
+    // Members that now hold two conflicting groups are reported, not silently changed.
+    const clash = d.chars.filter(c => c.groups.includes(g.id) && c.groups.some(o => o !== g.id && this.groupsConflict(d, o, g.id)));
+    this.save(d); this.editGid = g.id;
+    flash(`Saved ${name}.${clash.length ? ` ⚠ ${clash.length} member${clash.length > 1 ? 's are' : ' is'} also in a conflicting group: ${clash.slice(0, 4).map(c => c.name).join(', ')}` : ''}`, !!clash.length);
+    this.render();
+  },
+  deleteGroup() {
+    const d = this.data(), g = this.group(d, this.editGid); if (!g) return;
+    const n = d.chars.filter(c => c.groups.includes(g.id) || c.conflicts.includes(g.id)).length;
+    if (!confirm(`Delete group "${g.name}"?${n ? ` It will be removed from ${n} character${n > 1 ? 's' : ''}.` : ''}`)) return;
+    d.groups = d.groups.filter(x => x !== g);
+    for (const o of d.groups) o.conflicts = o.conflicts.filter(x => x !== g.id);
+    for (const c of d.chars) { c.groups = c.groups.filter(x => x !== g.id); c.conflicts = c.conflicts.filter(x => x !== g.id); }
+    this.save(d); this.editGid = null; this.render();
+  },
+
+  // Look up EVE character IDs (for portraits and killboard links). eveId 0 = name not found.
+  async resolveIds() {
+    const d = this.data(); const todo = d.chars.filter(c => c.eveId === undefined || c.eveId === null);
+    if (!todo.length) return;
+    const found = new Map();
+    try {
+      for (let i = 0; i < todo.length; i += 400) {
+        const res = await ESI.req('/universe/ids/', { method: 'POST', body: todo.slice(i, i + 400).map(c => c.name), retries: 2 });
+        for (const ch of res?.characters || []) found.set(ch.name.toLowerCase(), ch.id);
+      }
+    } catch (e) { console.warn('ID lookup failed', e); return; }
+    const d2 = this.data();
+    for (const c of d2.chars) if ((c.eveId === undefined || c.eveId === null) && todo.some(t => t.id === c.id)) c.eveId = found.get(c.name.toLowerCase()) || 0;
+    this.save(d2);
+    if (UI.page === 'charsets') this.render();
+  },
+
+  // ── spreadsheet ──
+  CHAR_COLS: ['Name', 'Account', 'Main', 'Color', 'Groups', 'Conflicts', 'Dedicated', 'Location', 'Notes'],
+  GROUP_COLS: ['Group', 'Color', 'Conflicts With', 'Dedicated', 'Notes'],
+  sheets(d, blank) {
+    const hdr = cols => cols.map(v => ({ v, bold: true }));
+    const gname = id => this.group(d, id)?.name;
+    const chars = blank ? [] : this.accounts(d).flatMap(a => d.chars.filter(c => c.account === a)).map(c => [
+      { v: c.name, fill: this.plateColor(d, c), bold: true }, c.account, this.isMain(d, c) ? 'Yes' : 'No', c.color ? { v: c.color, fill: c.color } : '',
+      c.groups.map(gname).filter(Boolean).join('; '), c.conflicts.map(gname).filter(Boolean).join('; '), c.locked ? 'Yes' : 'No', c.loc || '', c.notes || '']);
+    const groups = d.groups.map(g => [{ v: g.name, fill: g.color, bold: true }, { v: g.color, fill: g.color },
+      d.groups.filter(o => o.id !== g.id && this.groupsConflict(d, g.id, o.id)).map(o => o.name).join('; '), g.excl ? 'Yes' : 'No', g.notes || '']);
+    const readme = [
+      [{ v: 'EVE Tiles Mobile — Char Sets spreadsheet', bold: true }],
+      ['Fill in the Characters and Groups sheets, then use Char Sets → Import. Column names must stay as they are.'],
+      [''],
+      [{ v: 'Characters sheet', bold: true }],
+      ['Name', 'Exact in-game character name.'],
+      ['Account', 'Any label. Characters with the same label share an account (only one can be logged in at a time).'],
+      ['Main', 'Yes for the account main. If no one on an account says Yes, the first listed is the main.'],
+      ['Color', 'Optional name-plate color as #RRGGBB (e.g. #2E6FB5). Blank = color of the first group.'],
+      ['Groups', 'Usage groups, separated by ;  (e.g. Miner; Lowsec PvP). Groups not on the Groups sheet are created.'],
+      ['Conflicts', 'Groups this character must NOT be used for, separated by ;  (e.g. Ratter).'],
+      ['Dedicated', 'Yes = locked to its current role, never suggested for anything else.'],
+      ['Location', 'Optional, e.g. where it is parked.'],
+      ['Notes', 'Optional.'],
+      [''],
+      [{ v: 'Groups sheet', bold: true }],
+      ['Group', 'Group name.'], ['Color', '#RRGGBB'], ['Conflicts With', 'Other groups, separated by ;  — works both ways.'],
+      ['Dedicated', 'Yes = members are never pulled into other groups.'], ['Notes', 'Optional.'],
+      [''],
+      [{ v: 'Example Characters rows', bold: true }],
+      hdr(this.CHAR_COLS),
+      [{ v: 'Example Main', fill: '#6A3FB5', bold: true }, 'Account 1', 'Yes', '#6A3FB5', 'Pocket Missioner', 'Ratter; Null Ratter', 'Yes', 'Amamake', 'good pirate standing'],
+      ['Example Alt', 'Account 1', 'No', '', 'Miner; Lowsec PvP', '', 'No', '', ''],
+      ['Second Account Main', 'Account 2', 'Yes', '', 'Ratter', '', 'No', '', ''],
+    ];
+    const yesNo = ['Yes', 'No'];
+    return [
+      { name: 'Characters', widths: [24, 14, 8, 11, 32, 26, 11, 20, 30], rows: [hdr(this.CHAR_COLS), ...chars], validations: [{ col: 2, list: yesNo }, { col: 6, list: yesNo }] },
+      { name: 'Groups', widths: [22, 11, 32, 11, 34], rows: [hdr(this.GROUP_COLS), ...groups], validations: [{ col: 3, list: yesNo }] },
+      { name: 'Read Me', widths: [24, 90, 8, 11, 22, 22, 11, 14, 22], rows: readme, frozen: false },
+    ];
+  },
+  exportXlsx(blank) {
+    const d = this.data();
+    Plans.download(blank ? 'eve-char-sets-template.xlsx' : `eve-char-sets-${fmtDate(Date.now())}.xlsx`, XLSX.build(this.sheets(d, blank)));
+  },
+
+  async importFile(file, mode) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let book;
+    if (buf[0] === 0x50 && buf[1] === 0x4b) book = await XLSX.parse(buf);
+    else book = { Characters: parseCSV(new TextDecoder().decode(buf)) };
+    const find = (names) => Object.keys(book).find(k => names.includes(k.trim().toLowerCase()));
+    const charKey = find(['characters', 'chars', 'sheet1']) || Object.keys(book)[0];
+    const groupKey = find(['groups']);
+    const table = (rows, required) => {
+      rows = (rows || []).filter(r => r && r.some(x => String(x).trim()));
+      if (!rows.length) return [];
+      const head = rows[0].map(h => String(h).trim().toLowerCase());
+      if (!head.includes(required)) throw new Error(`Couldn't find a "${required}" column header in row 1.`);
+      return rows.slice(1).map(r => Object.fromEntries(head.map((h, i) => [h, String(r[i] ?? '').trim()])));
+    };
+    const yes = v => /^(y|yes|true|1|x|✓)$/i.test(v || '');
+    const list = v => (v || '').split(/[;,\n]/).map(x => x.trim()).filter(Boolean);
+    const hex = v => { const m = /^#?([0-9a-f]{6})$/i.exec((v || '').trim()); return m ? '#' + m[1].toLowerCase() : null; };
+    const gRows = groupKey ? table(book[groupKey], 'group') : [];
+    const cRows = table(book[charKey], 'name');
+    if (!cRows.length && !gRows.length) throw new Error('No rows found to import.');
+
+    const d = mode === 'replace' ? { schema: 1, groups: [], chars: [] } : this.data();
+    const created = [];
+    const palette = ['#2e6fb5', '#b8860b', '#a83232', '#6a3fb5', '#2e8b57', '#d35400', '#1f7a7a', '#8e44ad', '#7f8c8d'];
+    const gByName = n => d.groups.find(g => g.name.toLowerCase() === n.toLowerCase());
+    const ensureGroup = n => {
+      let g = gByName(n);
+      if (!g) { g = { id: this.uid('g'), name: n, color: palette[d.groups.length % palette.length], conflicts: [], excl: false, notes: '' }; d.groups.push(g); created.push(n); }
+      return g;
+    };
+    for (const r of gRows) {
+      if (!r.group) continue;
+      const g = ensureGroup(r.group); const wasNew = created.includes(r.group); if (wasNew) created.pop();
+      if (hex(r.color)) g.color = hex(r.color);
+      if ('dedicated' in r) g.excl = yes(r.dedicated);
+      if ('notes' in r) g.notes = r.notes;
+    }
+    for (const r of gRows) {
+      if (!r.group || !('conflicts with' in r)) continue;
+      const g = gByName(r.group); g.conflicts = list(r['conflicts with']).map(n => ensureGroup(n).id).filter(id => id !== g.id);
+    }
+    let added = 0, updated = 0;
+    for (const r of cRows) {
+      if (!r.name) continue;
+      let c = d.chars.find(x => x.name.toLowerCase() === r.name.toLowerCase());
+      if (c) updated++; else { c = { id: this.uid('c'), name: r.name, groups: [], conflicts: [], color: null, locked: false, loc: '', notes: '' }; d.chars.push(c); added++; }
+      if (r.account || !c.account) c.account = r.account || this.nextAccountName(d);
+      if ('main' in r) c.main = yes(r.main);
+      if ('color' in r) c.color = hex(r.color);
+      if ('groups' in r) c.groups = [...new Set(list(r.groups).map(n => ensureGroup(n).id))];
+      if ('conflicts' in r) c.conflicts = [...new Set(list(r.conflicts).map(n => ensureGroup(n).id))].filter(id => !c.groups.includes(id));
+      if ('dedicated' in r) c.locked = yes(r.dedicated);
+      if ('location' in r) c.loc = r.location;
+      if ('notes' in r) c.notes = r.notes;
+    }
+    // one main per account: keep the first "Yes"
+    for (const a of this.accounts(d)) { let seen = false; for (const c of d.chars.filter(x => x.account === a)) { if (c.main && seen) c.main = false; if (c.main) seen = true; } }
+    if (mode === 'replace' && !confirm(`Replace everything with ${d.chars.length} characters and ${d.groups.length} groups from the file?`)) return;
+    this.save(d);
+    this.render(); this.resolveIds();
+    flash(`Imported: ${added} new, ${updated} updated character${added + updated === 1 ? '' : 's'}; ${d.groups.length} groups${created.length ? ` (created ${created.join(', ')})` : ''}.`);
+  },
+
+  wire() {
+    $('#cs-sub').onclick = e => { const b = e.target.closest('button'); if (!b) return; this.sub = b.dataset.v; this.render(); };
+    $('#cs-set').onchange = e => { const ui = LS.get(KEYS.ui, {}); ui.csSet = e.target.value; LS.set(KEYS.ui, ui); this.pick.clear(); this.renderSets(this.data()); };
+    $('#cs-find').onchange = () => this.renderSets(this.data());
+    $('#cs-plates').onchange = e => {
+      const cb = e.target.closest('.cs-use'); if (!cb) return;
+      if (cb.checked) this.pick.add(cb.dataset.cid); else this.pick.delete(cb.dataset.cid);
+      this.renderSets(this.data());
+    };
+    $('#cs-pickbar').onclick = e => {
+      const id = e.target.id;
+      if (id === 'cs-autopick') this.autoPick();
+      if (id === 'cs-clear') { this.pick.clear(); this.renderSets(this.data()); }
+      if (id === 'cs-copy') { const d = this.data(); navigator.clipboard.writeText([...this.pick].map(i => d.chars.find(c => c.id === i)?.name).filter(Boolean).join('\n')).then(() => flash('Copied.'), () => flash('Clipboard blocked.', true)); }
+    };
+    $('#cs-c-new').onclick = () => { this.editId = null; this.render(); $('#cs-f-name').focus(); };
+    $('#cs-c-search').oninput = () => this.renderCharList(this.data());
+    $('#cs-c-list').onclick = e => { const r = e.target.closest('[data-cid]'); if (!r) return; this.editId = r.dataset.cid; this.render(); };
+    const reCheck = () => this.renderFormChecks(this.data(), this.formGroupsState());
+    $('#cs-f-groups').onchange = reCheck; $('#cs-f-conf').onchange = reCheck; $('#cs-f-hasconf').onchange = reCheck;
+    $('#cs-f-color').oninput = () => $('#cs-f-gcolor').checked = false;
+    $('#cs-f-save').onclick = () => this.saveChar();
+    $('#cs-f-name').onkeydown = e => { if (e.key === 'Enter') this.saveChar(); };
+    $('#cs-f-del').onclick = () => {
+      const d = this.data(), c = d.chars.find(x => x.id === this.editId);
+      if (!c || !confirm(`Delete ${c.name}?`)) return;
+      d.chars = d.chars.filter(x => x !== c); this.save(d); this.editId = null; this.pick.delete(c.id); this.render();
+    };
+    $('#cs-bulk-add').onclick = () => this.bulkAdd();
+    $('#cs-g-new').onclick = () => { this.editGid = null; this.render(); $('#cs-g-name').focus(); };
+    $('#cs-g-list').onclick = e => { const r = e.target.closest('[data-gid]'); if (!r) return; this.editGid = r.dataset.gid; this.render(); };
+    $('#cs-g-save').onclick = () => this.saveGroup();
+    $('#cs-g-del').onclick = () => this.deleteGroup();
+    $('#cs-export').onclick = () => this.exportXlsx(false);
+    $('#cs-template').onclick = () => this.exportXlsx(true);
+    const dlg = $('#cs-import-dlg');
+    $('#cs-import').onclick = () => { $('#cs-import-file').value = ''; dlg.showModal(); };
+    $('#cs-import-cancel').onclick = () => dlg.close();
+    $('#cs-import-go').onclick = async () => {
+      const f = $('#cs-import-file').files[0]; if (!f) { flash('Choose a file first.', true); return; }
+      const mode = $('input[name=cs-imode]:checked').value;
+      dlg.close();
+      try { await this.importFile(f, mode); } catch (e) { flash('Import failed: ' + e.message, true); console.error(e); }
+    };
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  UI WIRING
+// ════════════════════════════════════════════════════════════════
+const UI = {
+  page: 'kb',
+  show(page) {
+    if (!$('#page-' + page)) page = 'kb';
+    this.page = page;
+    $$('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
+    $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+    $('#charbar').classList.toggle('show', ['kb', 'killed', 'ships'].includes(page));
+    const ui = LS.get(KEYS.ui, {}); ui.page = page; LS.set(KEYS.ui, ui);
+    if (location.hash !== '#' + page) history.replaceState(null, '', '#' + page);
+    if (page === 'skills') Skills.render();
+    else if (page === 'plans') Plans.renderAll();
+    else if (page === 'charsets') CS.render();
+    else KB.renderAll();
+  },
+  renderAuth() {
+    const chars = Object.values(SSO.chars());
+    const btn = $('#auth-btn');
+    if (!chars.length) { btn.textContent = '🔑 Log in with EVE'; btn.classList.remove('linked'); }
+    else {
+      const a = SSO.chars()[Skills.activeId()] || chars[0];
+      btn.textContent = `👤 ${a.name}${chars.length > 1 ? ` +${chars.length - 1}` : ''} ▾`;
+      btn.classList.add('linked');
+    }
+    $('#auth-menu').innerHTML = chars.map(c => `<div class="menu-item"><img src="${portrait(c.id, 32)}" alt="">
+        <div class="grow"><div class="nm">${esc(c.name)}</div><div class="sub">${c.needsLogin ? '⚠ login expired' : 'logged in'}</div></div>
+        ${c.needsLogin ? `<button class="btn sm green" data-relog="${c.id}">Log in</button>` : `<button class="btn sm ghost" data-use="${c.id}">Skills</button>`}
+        <button class="btn sm red" data-logout="${c.id}" title="Log out and revoke">✕</button></div>`).join('')
+      + `<div class="menu-item"><button class="btn sm green" id="menu-add" style="width:100%">+ Add a character</button></div>`;
+  },
+};
+
+function wire() {
+  $$('.tab-btn').forEach(b => b.onclick = () => UI.show(b.dataset.page));
+
+  // auth menu
+  $('#auth-btn').onclick = e => {
+    e.stopPropagation();
+    if (!Object.keys(SSO.chars()).length) { SSO.login(); return; }
+    $('#auth-menu').classList.toggle('open');
+  };
+  document.addEventListener('click', e => { if (!e.target.closest('#auth-wrap')) $('#auth-menu').classList.remove('open'); });
+  $('#auth-menu').onclick = e => {
+    const t = e.target.closest('button'); if (!t) return;
+    if (t.id === 'menu-add' || t.dataset.relog) SSO.login();
+    else if (t.dataset.use) { LS.set(KEYS.skillChar, +t.dataset.use); UI.renderAuth(); UI.show('skills'); }
+    else if (t.dataset.logout) { const c = SSO.chars()[t.dataset.logout]; if (confirm(`Log out ${c?.name}? This also revokes this site's access token.`)) SSO.logout(+t.dataset.logout); }
+    $('#auth-menu').classList.remove('open');
+  };
+
+  // char bar
+  $('#kb-char').onchange = e => KB.select(e.target.value);
+  $('#kb-add-btn').onclick = () => KB.addByName($('#kb-add').value);
+  $('#kb-add').onkeydown = e => { if (e.key === 'Enter') KB.addByName($('#kb-add').value); };
+  $('#kb-star').onclick = () => {
+    const t = KB.tracked(), c = t.find(x => x.id === KB.charId); if (!c) return;
+    c.star = !c.star; KB.saveTracked(t); KB.renderSelector();
+    if (c.star) Sync.run(c.id, { full: true });
+  };
+  $('#kb-sync').onclick = () => {
+    if (!KB.charId) return;
+    if (Sync.jobs.has(KB.charId)) Sync.stop(KB.charId);
+    else Sync.run(KB.charId, { full: true });
+  };
+  $('#kb-remove').onclick = () => {
+    const c = KB.current(); if (!c || !confirm(`Remove ${c.name} from the list? Cached killmails are kept.`)) return;
+    Sync.stop(c.id);
+    KB.saveTracked(KB.tracked().filter(x => x.id !== c.id));
+    const next = KB.tracked()[0];
+    KB.select(next ? (next.id ?? 'n:' + next.name) : null);
+  };
+  Sync.on((job, batch) => KB.onSync(job, batch));
+
+  // pilot links anywhere
+  document.addEventListener('click', async e => {
+    const el = e.target.closest('[data-pilot]'); if (!el) return;
+    const id = +el.dataset.pilot;
+    await Names.load([id]);
+    KB.ensure(id, Names.name(id) || el.textContent);
+    UI.show('kb'); KB.select(id);
+    window.scrollTo(0, 0);
+  });
+
+  // killboard feed
+  $('#feed-type').onchange = () => { KB.feedPage = 1; KB.renderFeed(); };
+  $('#feed-ship').oninput = () => { KB.feedPage = 1; KB.renderFeed(); };
+  $('#feed-prev').onclick = () => { KB.feedPage--; KB.renderFeed(); };
+  $('#feed-next').onclick = () => { KB.feedPage++; KB.renderFeed(); };
+
+  // analysis pages
+  const segs = (id, fn) => $(id).onclick = e => { const b = e.target.closest('button'); if (!b) return; $$(id + ' button').forEach(x => x.classList.toggle('on', x === b)); fn(); };
+  segs('#killed-mode', () => KB.renderKilled());
+  segs('#ships-mode', () => { KB.open.ships = null; KB.renderShips(); });
+  for (const pg of ['killed', 'ships']) {
+    $$(`#page-${pg} .f-period, #page-${pg} .f-pods, #page-${pg} .f-solo`).forEach(el => el.onchange = () => KB.renderAll());
+  }
+  $('#killed-search').oninput = () => KB.renderKilled();
+  $('#ships-search').oninput = () => KB.renderShips();
+  $('#killed-list').onclick = e => { const r = e.target.closest('.lrow'); if (!r) return; const t = +r.dataset.type; KB.open.killed = KB.open.killed === t ? null : t; KB.renderKilled(); };
+  $('#ships-list').onclick = e => { const r = e.target.closest('.lrow'); if (!r) return; const t = +r.dataset.type; KB.open.ships = KB.open.ships === t ? null : t; KB.renderShips(); };
+
+  // skills
+  $('#client-id').oninput = e => SSO.setClientId(e.target.value);
+  $('#sso-login-2').onclick = () => SSO.login();
+  $('#copy-cb').onclick = () => navigator.clipboard.writeText(PAGE_URL).then(() => flash('Callback URL copied.'));
+  $('#sk-char').onchange = e => { LS.set(KEYS.skillChar, +e.target.value); UI.renderAuth(); Skills.render(); };
+  $('#sk-refresh').onclick = () => Skills.render(true);
+  $('#sk-add').onclick = () => SSO.login();
+  $('#sk-setup').onclick = () => { const s = $('#sso-setup'); s.style.display = s.style.display === 'none' ? 'block' : 'none'; $('#callback-url').textContent = PAGE_URL; };
+  $('#sk-group').onchange = $('#sk-lvl').onchange = () => Skills.renderSkills();
+  $('#sk-search').oninput = () => Skills.renderSkills();
+
+  // plans
+  $('#plan-new').onclick = () => Plans.create('New plan');
+  $('#plan-list').onclick = e => { const it = e.target.closest('[data-plan]'); if (it) Plans.select(it.dataset.plan); };
+  $('#preset-list').onclick = e => {
+    const it = e.target.closest('[data-preset]'); if (!it) return;
+    const pr = SDE.presets.find(x => x.id === it.dataset.preset);
+    const p = Plans.create(pr.name, pr.e.map(([s, l]) => ({ s, l, t: 'Planned', p: 3 })), { src: pr.id, desc: pr.desc });
+    flash(`Created "${p.name}" — ${p.entries.length} levels, prerequisites included.`);
+  };
+  $('#plan-name').oninput = e => { Plans.update(Plans.activeId, p => p.name = e.target.value); Plans.renderList(); };
+  $('#plan-char').onchange = e => {
+    const id = +e.target.value || null;
+    Plans.update(Plans.activeId, p => { p.charId = id; p.entries = Plans.normalize(p.entries, Plans.trainedFor(id)).entries; });
+    Plans.renderEditor();
+  };
+  $('#plan-delete').onclick = () => {
+    const p = Plans.get(Plans.activeId); if (!p || !confirm(`Delete plan "${p.name}"?`)) return;
+    const d = Plans.data(); d.plans = d.plans.filter(x => x.id !== p.id); Plans.save(d);
+    Plans.select(d.plans[0]?.id || null);
+  };
+  $('#plan-dup').onclick = () => { const p = Plans.get(Plans.activeId); if (p) Plans.create(p.name + ' (copy)', p.entries, { desc: p.desc, charId: p.charId }); };
+  $('#plan-clean').onclick = () => Plans.cleanTrained(Plans.activeId);
+  $('#plan-export-xml').onclick = () => { const p = Plans.get(Plans.activeId); Plans.download(Plans.fileName(p, '.xml'), Plans.toEVEMonXML(p), 'application/xml'); };
+  $('#plan-export-emp').onclick = async () => {
+    const p = Plans.get(Plans.activeId);
+    if (!window.CompressionStream) { flash('This browser cannot write .emp; use .xml (EVEMon opens both).', true); return; }
+    const gz = new Blob([Plans.toEVEMonXML(p)]).stream().pipeThrough(new CompressionStream('gzip'));
+    Plans.download(Plans.fileName(p, '.emp'), await new Response(gz).blob());
+  };
+  $('#plan-copy-game').onclick = () => {
+    const p = Plans.get(Plans.activeId); const t = Plans.trainedFor(p.charId);
+    const txt = p.entries.filter(e => (t[e.s] || 0) < e.l).map(e => `${skName(e.s)} ${e.l}`).join('\n');
+    navigator.clipboard.writeText(txt).then(() => flash('Copied — paste into a new in-game skill plan.'), () => flash('Clipboard blocked by the browser.', true));
+  };
+  $('#plan-entries').onclick = e => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const idx = +b.closest('[data-idx]').dataset.idx;
+    if (b.dataset.act === 'del') Plans.remove(Plans.activeId, idx);
+    else Plans.move(Plans.activeId, idx, b.dataset.act === 'up' ? -1 : 1);
+  };
+  let taT;
+  $('#plan-search').oninput = e => { clearTimeout(taT); taT = setTimeout(() => Plans.search(e.target.value), 120); };
+  $('#plan-search').onfocus = e => Plans.search(e.target.value);
+  document.addEventListener('click', e => { if (!e.target.closest('.ta-wrap')) $('#plan-search-results').classList.remove('open'); });
+  $('#plan-search-results').onclick = e => {
+    const lb = e.target.closest('button[data-skill]');
+    if (lb) { Plans.add(Plans.activeId, [[+lb.dataset.skill, +lb.dataset.lvl]]); Plans.search($('#plan-search').value); return; }
+    const sh = e.target.closest('[data-ship]');
+    if (sh) { const s = SDE.ships[sh.dataset.ship]; Plans.add(Plans.activeId, s[2].map(([sid, l]) => [sid, l])); $('#plan-search-results').classList.remove('open'); }
+  };
+
+  // import dialog
+  const dlg = $('#import-dlg');
+  $('#plan-import').onclick = () => { $('#import-file').value = ''; $('#import-text').value = ''; dlg.showModal(); };
+  $('#import-cancel').onclick = () => dlg.close();
+  $('#import-go').onclick = async () => {
+    try {
+      const f = $('#import-file').files[0];
+      const text = f ? await Plans.readFile(f) : $('#import-text').value;
+      if (!text.trim()) { flash('Choose a file or paste a plan.', true); return; }
+      dlg.close();
+      UI.show('plans');
+      await Plans.importText(text);
+    } catch (e) { flash(e.message, true); }
+  };
+
+  CS.wire();
+  window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== UI.page) UI.show(h); });
+  setInterval(() => { if (UI.page === 'skills') Skills.renderQueue(); }, 30000);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  STARTUP
+// ════════════════════════════════════════════════════════════════
+(async function start() {
+  if (!SDE) { document.body.innerHTML = '<p style="padding:20px">eve-static-data.js is missing — keep it next to index.html.</p>'; return; }
+  runMigrations();
+  wire();
+  if (navigator.storage?.persist) navigator.storage.persist().catch(() => { });
+  Plans.activeId = LS.get(KEYS.activePlan, null);
+  if (Plans.activeId && !Plans.get(Plans.activeId)) Plans.activeId = null;
+
+  let startPage = location.hash.slice(1) || LS.get(KEYS.ui, {}).page || 'kb';
+  try {
+    const c = await SSO.handleCallback();
+    if (c) { startPage = 'skills'; flash(`Logged in as ${c.name}.`); }
+  } catch (e) { startPage = 'skills'; setTimeout(() => setStatus('skills-status', e.message, true), 0); }
+
+  UI.renderAuth();
+  const sel = LS.get(KEYS.kbSelected, null);
+  const t = KB.tracked();
+  KB.renderSelector();
+  UI.show(startPage);
+  const first = t.find(x => x.id === sel) || t.find(x => x.star) || t[0];
+  if (first) KB.select(first.id ?? 'n:' + first.name);
+  // Keep tracked (★) pilots up to date in the background.
+  setTimeout(async () => { for (const c of KB.tracked().filter(x => x.star && x.id && x.id !== KB.charId)) await Sync.run(c.id, { full: true }); }, 4000);
+})();
+</script>
+</body>
+</html>
