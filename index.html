@@ -2430,7 +2430,7 @@ const KMV = {
           <div><span class="gold">${fmtISK(z?.[1])} ISK</span> · ${fmtNum(v.damage_taken || 0)} damage taken · ${atk.length} attacker${atk.length === 1 ? '' : 's'}${z?.[2] ? ' <span class="tag solo">SOLO</span>' : ''}</div>
         </div></div>
       <div class="km-grid">
-        <div class="card" style="margin:0"><div class="label-row"><span class="title">Fit</span><span class="row" style="gap:4px"><button class="btn sm gold" id="km-save" ${items.length ? '' : 'disabled'}>★ Save fit</button><button class="btn sm ghost" id="km-copy" ${items.length ? '' : 'disabled'}>⧉ Copy</button><button class="btn sm ghost" id="km-pc" ${items.length ? '' : 'disabled'} title="Send to PC">🖥</button></span></div>${items.length ? '<div class="throw-grip" title="Swipe up to throw this fit to your PC">⇧ swipe up to throw to PC</div>' : ''}${fitHTML}</div>
+        <div class="card" style="margin:0"><div class="label-row"><span class="title">Fit</span><span class="row" style="gap:4px"><button class="btn sm gold" id="km-save" ${items.length ? '' : 'disabled'}>★ Save fit</button><button class="btn sm ghost" id="km-copy" ${items.length ? '' : 'disabled'}>⧉ Copy</button><button class="btn sm ghost" id="km-pc" ${items.length ? '' : 'disabled'} title="Send to PC">🖥</button></span></div>${items.length ? '<div class="throw-grip" title="Swipe up or tap to throw this fit to your PC">⇧ swipe up or tap — throw to PC</div>' : ''}${fitHTML}</div>
         <div class="card" style="margin:0"><div class="card-title">Attackers (${atk.length})</div>${atkHTML}</div>
       </div>`;
   },
@@ -2539,7 +2539,7 @@ const INF = {
         const racks = ['High', 'Mid', 'Low', 'Rig', 'Subsystem'].filter(r => c.racks[r].length).map(r =>
           `<div class="slot-hdr">${r}</div>` + count(c.racks[r]).map(([t, n]) => `<div class="fit-row"><img src="${typeIcon(t)}" alt="" loading="lazy"><div>${n > 1 ? n + '× ' : ''}${esc(Names.typeName(t))}</div><div></div></div>`).join('')).join('');
         return `<div class="card" style="margin-bottom:10px" data-infcard="${i}"><div class="label-row"><span class="title">#${i + 1} · ${c.kms.length} of ${res.n} losses (${pct}%)</span><span class="sub">avg ${fmtISK(c.isk / c.kms.length)} ISK</span></div>
-          <div class="throw-grip" title="Swipe up to throw this fit to your PC">⇧ swipe up to throw to PC</div>${racks}
+          <div class="throw-grip" title="Swipe up or tap to throw this fit to your PC">⇧ swipe up or tap — throw to PC</div>${racks}
           <div class="row" style="margin-top:8px"><button class="btn sm gold" data-infsave="${i}">★ Save fit</button><button class="btn sm ghost" data-infcopy="${i}">⧉ Copy</button><button class="btn sm ghost" data-infpc="${i}">🖥 PC</button><button class="btn sm ghost" data-infkm="${i}">☠ Example killmail</button></div></div>`;
       }).join('');
     $$('#inf-body [data-infcard]').forEach(card => { const i = +card.dataset.infcard; PCL.attachThrow($('.throw-grip', card), card, () => ({ title: `${Names.typeName(ship)} — popular #${i + 1}`, eft: this.eftFor(i) })); });
@@ -2608,12 +2608,14 @@ const PCL = {
   async send(kind, title, text) {
     if (!this.code()) { this.openDialog(); flash('Link your PC first — enter the code shown by the PC helper.', true); return false; }
     if (!window.CompressionStream || !crypto.subtle) { flash('This browser is too old for PC link.', true); return false; }
+    flash('🖥 Sending…');
     const body = await this.encrypt(JSON.stringify({ k: kind, title, text, ts: Date.now() }));
     try {
-      await this.post((await this.keys()).topic, body);
+      const res = await this.post((await this.keys()).topic, body);
+      this.lastId = res?.id || '?';
       flash(`🖥 Sent to PC — ${title}`);
       return true;
-    } catch (e) { flash('Could not reach the relay: ' + e.message, true); return false; }
+    } catch (e) { flash('Not sent: ' + e.message, true); this.lastErr = e.message; return false; }
   },
   sendFit(title, eft) { return this.send('fit', title, eft); },
   // Relay messages are kept small (ntfy.sh limit ~4 KB): bigger payloads go as numbered chunks.
@@ -2623,10 +2625,15 @@ const PCL = {
       const sid = Math.random().toString(36).slice(2, 10), n = Math.ceil(payload.length / this.CHUNK);
       return Array.from({ length: n }, (_, i) => `ETMC:${sid}:${i}:${n}:${payload.slice(i * this.CHUNK, (i + 1) * this.CHUNK)}`);
     })();
+    let last = null;
     for (const body of parts) {
-      const r = await fetch(`${this.RELAY}/${topic}`, { method: 'POST', body });
-      if (!r.ok) throw new Error('relay ' + r.status);
+      let r;
+      try { r = await fetch(`${this.RELAY}/${topic}`, { method: 'POST', body }); }
+      catch (e) { throw new Error('no connection to ntfy.sh (offline, or blocked by a VPN/ad-blocker?)'); }
+      if (!r.ok) throw new Error(`ntfy.sh answered ${r.status}${r.status === 429 ? ' (too many messages — wait a minute)' : ''}`);
+      last = await r.json().catch(() => ({}));
     }
+    return last;
   },
   assemble(bodies) { // message bodies (in order) → complete ETM1 payloads
     const out = [], groups = new Map();
@@ -2712,8 +2719,9 @@ const PCL = {
     });
     const end = async e => {
       if (e.pointerId !== id) return; id = null;
-      const dy = e.clientY - sy, dt = performance.now() - t0;
-      if (dy < -90 && Math.abs(e.clientX - sx) < Math.abs(dy) && dt < 700) {
+      const dy = e.clientY - sy, dx = e.clientX - sx, dt = performance.now() - t0;
+      const tap = Math.abs(dy) < 12 && Math.abs(dx) < 12 && dt < 600;
+      if (tap || (dy < -50 && Math.abs(dx) < Math.abs(dy) && dt < 1200)) {
         const f = getFit(); if (!f) { el.style.transform = ''; return; }
         el.classList.add('thrown');
         const ok = await this.sendFit(f.title, f.eft);
@@ -2730,7 +2738,9 @@ const PCL = {
       LS.set(KEYS.pclink, { code: c }); this._keys = null;
       $('#pcl-status').textContent = 'Linked. Sending a test…';
       const ok = await this.send('test', 'Test from your phone', 'EVE Tiles Mobile PC link works!');
-      $('#pcl-status').textContent = ok ? '✓ Linked — a test popup should appear on your PC.' : 'Saved, but the test could not be sent.';
+      $('#pcl-status').innerHTML = ok
+        ? `✓ Phone side works — ntfy.sh accepted the test (id ${esc(this.lastId)}).<br>A "✓ Phone linked" popup should appear on the PC within a few seconds. If not, check the status line in the PC window and that its code matches <b>${esc(c.replace(/(.{4})(.{4})(.{2})/, '$1-$2-$3'))}</b>.`
+        : `⚠ Code saved, but the phone couldn't send: ${esc(this.lastErr || 'unknown error')}`;
     };
     $('#pcl-unlink').onclick = () => { LS.del(KEYS.pclink); this._keys = null; $('#pcl-code').value = ''; $('#pcl-status').textContent = 'Not linked.'; };
     document.addEventListener('click', e => { if (e.target.closest('[data-pcl-open]')) this.openDialog(); });
@@ -2817,7 +2827,7 @@ const FITS = {
   detailHTML(d, f) {
     const p = this.parseEFT(f.eft);
     const secs = p ? p.sections.filter(([, s]) => s.length).map(([lbl, s]) => `<div class="slot-hdr">${lbl}</div>${s.map(l => `<div class="fl">${esc(l)}</div>`).join('')}`).join('') : '<div class="empty">Fit text could not be read.</div>';
-    return `<div class="drill fit-detail"><div class="throw-grip" title="Swipe up to throw this fit to your PC">⇧ swipe up to throw to PC</div>${f.notes ? `<div class="muted" style="margin-bottom:6px">📝 ${esc(f.notes)}</div>` : ''}${secs}
+    return `<div class="drill fit-detail"><div class="throw-grip" title="Swipe up or tap to throw this fit to your PC">⇧ swipe up or tap — throw to PC</div>${f.notes ? `<div class="muted" style="margin-bottom:6px">📝 ${esc(f.notes)}</div>` : ''}${secs}
       <div class="row" style="margin-top:10px">
         <button class="btn sm" data-act="copy">⧉ Copy fit</button>
         <button class="btn sm" data-act="pc">🖥 Send to PC</button>
