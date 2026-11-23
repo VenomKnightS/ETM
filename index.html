@@ -479,6 +479,10 @@
     <div class="row" id="fit-tags" style="margin-bottom:8px"></div>
     <div id="fit-list"></div>
   </div>
+  <div class="card" id="fit-thrown-card" style="display:none">
+    <div class="label-row"><span class="title">🖥 Thrown fits — last 12 h</span><button class="btn sm ghost" id="fit-thrown-refresh">⟳</button></div>
+    <div id="fit-thrown"></div>
+  </div>
 </div>
 
 <dialog id="pop-dlg" style="max-width:420px">
@@ -656,6 +660,7 @@
   <p class="muted" style="margin-bottom:10px">Includes: tracked pilots, plans, Char Sets, fits and tags, and settings. Not included: EVE logins (log in again on each device, for safety) and downloaded killmails (they re-download when you track a pilot).</p>
   <div class="card" style="margin-bottom:10px"><div class="card-title">Sync with my other device</div>
     <p class="muted" style="margin-bottom:8px;font-size:12px">Phone ⇄ PC through the PC link relay, encrypted. Both devices need the same PC link code (🔗). Sent data waits up to 12 hours.</p>
+    <label class="muted" style="display:block;margin-bottom:8px"><input type="checkbox" id="bk-logins" checked> Include EVE logins <span style="font-size:11px">(handoff: send from the device you used last)</span></label>
     <div class="row"><button class="btn green" id="bk-send">📤 Send to my other device</button><button class="btn" id="bk-get">📥 Get from my other device</button><button class="btn sm ghost" data-pcl-open="1">🔗</button></div>
     <div id="bk-sync-status" class="status-line"></div></div>
   <div class="card-title">Backup file</div>
@@ -1750,7 +1755,7 @@ const Skills = {
     // attribute numbers already include implants. Falls back to Omega + implants.
     let use = withImpl, mult = 1, modeNote = 'Omega speed assumed';
     const now = Date.now();
-    const cur = (queue || []).find(q => q.start_date && q.finish_date && Date.parse(q.start_date) <= now && Date.parse(q.finish_date) > now);
+    const cur = (Array.isArray(queue) ? queue : []).find(q => q.start_date && q.finish_date && Date.parse(q.start_date) <= now && Date.parse(q.finish_date) > now);
     const mins = cur ? (Date.parse(cur.finish_date) - Date.parse(cur.start_date)) / 60000 : 0;
     if (cur && mins > 5 && cur.level_end_sp > cur.training_start_sp) {
       const actual = (cur.level_end_sp - cur.training_start_sp) / mins;
@@ -1762,7 +1767,7 @@ const Skills = {
       if (best && best.err < 0.03) { use = best.a; mult = best.m; modeNote = (mult === 1 ? 'Omega' : 'Alpha (half speed)') + ' — matches your current training'; }
       else modeNote = `Omega assumed — current training runs at ${Math.round(actual * 60)} SP/h (boosters or accelerators?)`;
     }
-    const data = { skills: map, queue: queue || [], totalSP: skills.total_sp || 0, unallocated: skills.unallocated_sp || 0, attrs: use, implants: implants || [], mult, modeNote, loaded: Date.now() };
+    const data = { skills: map, queue: Array.isArray(queue) ? queue : [], totalSP: skills.total_sp || 0, unallocated: skills.unallocated_sp || 0, attrs: use, implants: implants || [], mult, modeNote, loaded: Date.now() };
     this.cache.set(charId, data);
     return data;
   },
@@ -1857,7 +1862,7 @@ const TRAIN = {
   // status of a skill queue: { kind: 'lapsed'|'paused'|'low'|'ok', end, cur }
   status(queue) {
     const now = Date.now();
-    const live = (queue || []).filter(x => !x.finish_date || Date.parse(x.finish_date) > now).sort((a, b) => a.queue_position - b.queue_position);
+    const live = (Array.isArray(queue) ? queue : []).filter(x => !x.finish_date || Date.parse(x.finish_date) > now).sort((a, b) => a.queue_position - b.queue_position);
     if (!live.length) return { kind: 'lapsed' };
     if (!live[0].start_date || !live[0].finish_date) return { kind: 'paused', cur: live[0], count: live.length };
     const last = live[live.length - 1];
@@ -1875,7 +1880,7 @@ const TRAIN = {
         try {
           const tok = await SSO.token(c.id);
           const queue = await ESI.req(`/characters/${c.id}/skillqueue/`, { token: tok });
-          this.q.set(c.id, { queue, at: Date.now() });
+          this.q.set(c.id, { queue: Array.isArray(queue) ? queue : [], at: Date.now() });
         } catch (e) { this.q.set(c.id, { queue: [], at: Date.now(), err: e.message }); }
         this.render(); this.badge();
       }
@@ -2673,12 +2678,22 @@ const PCL = {
   // ── data sync between your devices (same pairing code) ──
   async sendBackup() {
     if (!this.code()) { this.openDialog(); flash('Link your devices first: enter the same PC link code on both.', true); return; }
-    const dev = this.device(), data = BACKUP.collect();
+    const dev = this.device(), data = BACKUP.collect({ logins: $('#bk-logins').checked });
     $('#bk-sync-status').textContent = 'Sending…';
     try {
       await this.post((await this.keys()).dataTopic, await this.encrypt(JSON.stringify({ k: 'backup', from: dev.id, fromName: dev.name, ts: Date.now(), data })));
       $('#bk-sync-status').textContent = `✓ Sent ${BACKUP.summary(data)}. On your other device: 💾 → 📥 Get from my other device (within 12 hours).`;
     } catch (e) { $('#bk-sync-status').textContent = '⚠ Could not send: ' + e.message; }
+  },
+  // Fits thrown from any linked device in the last 12 h (the relay keeps them that long).
+  async recentThrown() {
+    const r = await fetch(`${this.RELAY}/${(await this.keys()).topic}/json?poll=1&since=12h`);
+    if (!r.ok) throw new Error('relay ' + r.status);
+    const bodies = (await r.text()).split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(e => e && e.event === 'message').map(e => (e.message || '').trim());
+    const out = [];
+    for (const p of this.assemble(bodies)) { try { const m = JSON.parse(await this.decrypt(p)); if (m.k === 'fit') out.push(m); } catch { } }
+    return out.sort((a, b) => b.ts - a.ts);
   },
   async receiveBackup() {
     if (!this.code()) { this.openDialog(); flash('Link your devices first: enter the same PC link code on both.', true); return; }
@@ -2696,7 +2711,7 @@ const PCL = {
     if (!pick) { $('#bk-sync-status').textContent = list.length ? 'Only this device\'s own sends are waiting — send from the other device first.' : 'Nothing waiting. Send from the other device first (it stays available for 12 hours).'; return; }
     const ago = fmtDur((Date.now() - pick.ts) / 1000);
     $('#bk-sync-status').textContent = `Found: from ${pick.fromName}, ${ago} ago — ${BACKUP.summary(pick.data)}.`;
-    if (!confirm(`Use the data sent from your ${pick.fromName} ${ago} ago?\n\n${BACKUP.summary(pick.data)}\n\nThis replaces tracked pilots, plans, Char Sets and fits on this device. Logins stay as they are.`)) return;
+    if (!confirm(`Use the data sent from your ${pick.fromName} ${ago} ago?\n\n${BACKUP.summary(pick.data)}\n\nThis replaces tracked pilots, plans, Char Sets and fits on this device.${pick.data[KEYS.ssoChars] ? ' Included EVE logins are added (newer ones replace older).' : ' Logins stay as they are.'}`)) return;
     BACKUP.apply(pick.data);
     location.reload();
   },
@@ -2753,6 +2768,26 @@ const PCL = {
 //    fits:[{id,name,ship,eft,tags:[tagId],fav,notes,src:{km,hash},created,modified}] }
 // ════════════════════════════════════════════════════════════════
 const FITS = {
+  thrown: [], thrownAt: 0,
+  async loadThrown(force) {
+    const card = $('#fit-thrown-card');
+    if (!PCL.code()) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+    if (!force && Date.now() - this.thrownAt < 60e3) return this.renderThrown();
+    $('#fit-thrown').innerHTML = '<div class="empty">Checking…</div>';
+    try { this.thrown = await PCL.recentThrown(); this.thrownAt = Date.now(); }
+    catch (e) { $('#fit-thrown').innerHTML = `<div class="empty">Couldn't check: ${esc(e.message)}</div>`; return; }
+    this.renderThrown();
+  },
+  renderThrown() {
+    const d = this.data(), keys = new Set(d.fits.map(f => this.bodyKey(f.eft)));
+    $('#fit-thrown').innerHTML = this.thrown.length ? this.thrown.map((m, i) => {
+      const p = this.parseEFT(this.splitEFT(m.text)[0] || ''), saved = keys.has(this.bodyKey(m.text));
+      return `<div class="cs-list-row" style="cursor:default"><img src="${typeIcon(p?.ship || 0)}" width="28" height="28" alt="" style="border-radius:3px">
+        <span class="grow">${esc(m.title)}<div class="cls muted" style="font-size:11px">${fmtDur((Date.now() - m.ts) / 1000)} ago${saved ? ' · saved' : ''}</div></span>
+        <button class="btn sm ghost" data-thrown-copy="${i}">⧉ Copy</button>${saved ? '' : `<button class="btn sm gold" data-thrown-save="${i}">★ Save</button>`}</div>`;
+    }).join('') : '<div class="empty">Nothing thrown in the last 12 hours.</div>';
+  },
   filter: new Set(), favOnly: false, open: null, editId: null, draft: null,
   uid: p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
 
@@ -2805,6 +2840,7 @@ const FITS = {
   // ── list ──
   render() {
     const d = this.data();
+    this.loadThrown();
     $('#fit-tags').innerHTML = `<button class="chipbtn${this.favOnly ? ' on' : ''}" data-fav="1">★ Favorites</button>`
       + d.tags.map(t => `<button class="chipbtn${this.filter.has(t.id) ? ' on' : ''}" data-tag="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join('');
     const q = $('#fit-search').value.trim().toLowerCase();
@@ -2985,6 +3021,12 @@ const FITS = {
       if (card) { this.open = this.open === card.dataset.fid ? null : card.dataset.fid; this.render(); }
     };
     $('#fit-paste').onclick = () => this.openEditor();
+    $('#fit-thrown-refresh').onclick = () => this.loadThrown(true);
+    $('#fit-thrown').onclick = e => {
+      const c = e.target.closest('[data-thrown-copy]'), sv = e.target.closest('[data-thrown-save]');
+      if (c) { const m = this.thrown[+c.dataset.thrownCopy]; navigator.clipboard.writeText(m.text).then(() => flash('Fit copied — paste into Pyfa or EVE.'), () => flash('Clipboard blocked by the browser.', true)); }
+      if (sv) { const m = this.thrown[+sv.dataset.thrownSave]; this.openEditor({ eft: m.text, name: m.title }); }
+    };
     $('#fit-popular').onclick = () => {
       if (!$('#pop-ships').children.length) $('#pop-ships').innerHTML = Object.values(SDE.ships).map(s => s[0]).sort().map(n => `<option value="${esc(n)}">`).join('');
       $('#pop-ship').value = ''; $('#pop-dlg').showModal(); $('#pop-ship').focus();
@@ -3693,11 +3735,30 @@ const CS = {
 // ════════════════════════════════════════════════════════════════
 const BACKUP = {
   KEYS: ['settings', 'tracked', 'kbSelected', 'plans', 'activePlan', 'ui', 'charsets', 'fits', 'skillChar'],
-  collect() { const data = {}; for (const k of this.KEYS) { const v = LS.get(KEYS[k], undefined); if (v !== undefined) data[KEYS[k]] = v; } return data; },
-  apply(data) { const allowed = new Set(this.KEYS.map(k => KEYS[k])); for (const k of Object.keys(data || {})) if (allowed.has(k)) LS.set(k, data[k]); },
+  // logins: only for the encrypted device-to-device sync, never in downloaded files
+  collect({ logins = false } = {}) {
+    const data = {}; for (const k of this.KEYS) { const v = LS.get(KEYS[k], undefined); if (v !== undefined) data[KEYS[k]] = v; }
+    if (logins) { const c = SSO.chars(); if (Object.keys(c).length) data[KEYS.ssoChars] = c; }
+    return data;
+  },
+  apply(data) {
+    const allowed = new Set(this.KEYS.map(k => KEYS[k]));
+    for (const k of Object.keys(data || {})) if (allowed.has(k)) LS.set(k, data[k]);
+    const inc = data?.[KEYS.ssoChars];
+    if (inc && typeof inc === 'object') { // per character, keep whichever login was refreshed most recently
+      const local = SSO.chars();
+      for (const [id, c] of Object.entries(inc)) {
+        const mine = local[id];
+        if (!c?.refresh) continue;
+        if (!mine || mine.needsLogin || !mine.refresh || (c.exp || 0) > (mine.exp || 0)) local[id] = { ...c, needsLogin: false };
+      }
+      SSO.saveChars(local);
+    }
+  },
   summary(data) {
     const n = (k, f) => { try { return f(data[KEYS[k]]) || 0; } catch { return 0; } };
-    return `${n('plans', d => d.plans.length)} plans, ${n('fits', d => d.fits.length)} fits, ${n('charsets', d => d.chars.length)} characters, ${n('tracked', d => d.filter(t => t.star).length)} tracked pilots`;
+    const logins = n('ssoChars', d => Object.keys(d).length);
+    return `${n('plans', d => d.plans.length)} plans, ${n('fits', d => d.fits.length)} fits, ${n('charsets', d => d.chars.length)} characters, ${n('tracked', d => d.filter(t => t.star).length)} tracked pilots${logins ? `, ${logins} EVE login${logins > 1 ? 's' : ''}` : ''}`;
   },
 };
 
@@ -3920,6 +3981,8 @@ function wire() {
   INF.wire();
   PCL.wire();
   // backup / restore
+  { const ui = LS.get(KEYS.ui, {}); if (ui.syncLogins === false) $('#bk-logins').checked = false; }
+  $('#bk-logins').onchange = e => { const ui = LS.get(KEYS.ui, {}); ui.syncLogins = e.target.checked; LS.set(KEYS.ui, ui); };
   $('#bk-btn').onclick = () => { $('#bk-file').value = ''; $('#bk-sync-status').textContent = PCL.code() ? '' : 'Link both devices with the same PC link code first (🔗 below).'; $('#bk-dlg').showModal(); };
   $('#bk-close').onclick = () => $('#bk-dlg').close();
   $('#bk-send').onclick = () => PCL.sendBackup();
