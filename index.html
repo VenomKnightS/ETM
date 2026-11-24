@@ -209,6 +209,19 @@
   .fit-card .ptag { font-size:9px; padding:0 5px; border-radius:2px; }
   .fit-card .fav { background:none; border:none; color:var(--dim); font-size:20px; cursor:pointer; padding:0 4px; }
   .fit-card .fav.on { color:var(--gold); }
+  .tree-cls, .tree-ship { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; border-bottom:1px solid #0d1824; }
+  .tree-cls { background:var(--hdr); color:var(--gold); font-size:12px; letter-spacing:.5px; text-transform:uppercase; padding:9px 10px; position:sticky; top:0; z-index:1; }
+  .tree-ship { padding:6px 10px 6px 18px; background:#0c1622; }
+  .tree-ship img { width:32px; height:32px; border-radius:4px; background:#000; }
+  .tree-ship .nm { font-weight:bold; }
+  .tree-cls:hover, .tree-ship:hover { filter:brightness(1.25); }
+  .caret { display:inline-block; width:12px; color:var(--dim); transition:transform .15s; }
+  .open > .caret { transform:rotate(90deg); }
+  .tree-n { color:var(--dim); font-size:11px; letter-spacing:0; text-transform:none; }
+  .tree-fits .fit-card { padding-left:30px; }
+  .tree-fits .fit-card img { display:none; }
+  .set-ic { width:32px; text-align:center; font-size:18px; }
+  .set-banner { background:#13233a; border:1px solid #24486e; border-radius:4px; padding:6px 8px; margin-bottom:8px; font-size:12px; }
   .fit-detail { padding-left:62px; } @media (max-width:640px){ .fit-detail { padding-left:12px; } }
   .fit-detail .fl { font-size:12px; padding:1px 0; }
   #fit-eft { font-family:Consolas, monospace; font-size:12px; min-height:180px; }
@@ -486,6 +499,7 @@
       <input type="file" id="fit-import-file" accept=".xlsx,.txt,text/plain" style="display:none">
     </div>
     <div class="row" id="fit-tags" style="margin-bottom:8px"></div>
+    <div class="row" style="margin-bottom:6px"><span class="muted grow" id="fit-tree-hint" style="font-size:11px"></span><button class="btn sm ghost" id="fit-expand">▾ Expand all</button><button class="btn sm ghost" id="fit-collapse">▸ Collapse all</button></div>
     <div id="fit-list"></div>
   </div>
   <div class="card" id="fit-pool-pane" style="display:none">
@@ -516,6 +530,17 @@
   <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="pool-cancel">Cancel</button><button class="btn green" id="pool-go">Import to pool</button></div>
 </dialog>
 
+<dialog id="set-dlg" style="max-width:520px">
+  <div class="card-title" id="set-title">Fit set</div>
+  <p class="muted" style="font-size:12px;margin-top:0">A set is fits you fly together — e.g. two Retributions and a Kirin for an abyssal. Every fit in a set keeps the same name and the same notes, and each still exports to EVE as its own fit. Fits named like <b>"… x3"</b> are grouped for you automatically.</p>
+  <div id="set-now" style="margin-bottom:8px"></div>
+  <label class="muted" style="font-size:12px">Put this fit in:</label>
+  <select id="set-pick" style="width:100%;margin:4px 0 10px"></select>
+  <div class="row" style="justify-content:flex-end">
+    <button class="btn sm red" id="set-leave">Take out of set</button><span class="grow"></span>
+    <button class="btn ghost" id="set-close">Cancel</button><button class="btn green" id="set-join">Save</button>
+  </div>
+</dialog>
 <dialog id="exp-dlg" style="max-width:640px">
   <div class="card-title" id="exp-title">Export</div>
   <div id="exp-fmt" class="checks" style="margin-bottom:8px">
@@ -2878,9 +2903,10 @@ const FMT = {
   // items: [{ p, name, notes }]
   toXML(items, o = {}) {
     const x = this.xmlEsc, L = ['<?xml version="1.0" ?>', '<fittings>'];
-    for (const { p, name, notes } of items) {
+    for (const { p, name, notes, lineup } of items) {
       L.push(`  <fitting name="${x(name || p.name || p.shipName)}">`);
-      const desc = o.notes !== false && notes ? (notes.length > 400 ? notes.slice(0, 397) + '...' : notes).replace(/\r?\n/g, '<br>') : '';
+      let desc = [o.set !== false ? lineup : '', o.notes !== false ? notes : ''].filter(Boolean).join('\n');
+      desc = (desc.length > 400 ? desc.slice(0, 397) + '...' : desc).replace(/\r?\n/g, '<br>');
       L.push(`    <description value="${x(desc)}"/>`);
       L.push(`    <shipType value="${x(p.shipName)}"/>`);
       for (const [r, slot] of [['low', 'low'], ['mid', 'med'], ['high', 'hi'], ['rig', 'rig'], ['sub', 'subsystem']])
@@ -2926,8 +2952,8 @@ const FMT = {
   },
   // Readable text for forums / Discord: EFT block plus optional notes, engagements, tags
   toForum(items, o = {}) {
-    return items.map(({ p, name, notes, engage, tags }) => {
-      const parts = [`${name || p.name} (${p.shipName})`, '', this.toEFT(p, o, name).trim()];
+    return items.map(({ p, name, notes, engage, tags, lineup }) => {
+      const parts = [`${name || p.name} (${p.shipName})`, ...(o.set !== false && lineup ? [lineup] : []), '', this.toEFT(p, o, name).trim()];
       if (o.notes !== false && notes) parts.push('', 'Notes:', notes.trim());
       if (o.engage !== false && engage?.length) {
         const g = { engage: 'Engage', careful: 'Careful', avoid: 'Avoid' };
@@ -2948,8 +2974,8 @@ const FMT = {
 // ════════════════════════════════════════════════════════════════
 const EXP = {
   items: [], title: '',
-  OPTS: { eft: ['charges', 'drones', 'cargo'], xml: ['charges', 'drones', 'cargo', 'notes'], forum: ['charges', 'drones', 'cargo', 'notes', 'engage', 'tags'] },
-  LABEL: { charges: 'Loaded ammo/charges', drones: 'Drones & fighters', cargo: 'Cargo', notes: 'Notes', engage: 'Engagements', tags: 'Tags' },
+  OPTS: { eft: ['charges', 'drones', 'cargo'], xml: ['charges', 'drones', 'cargo', 'notes', 'set'], forum: ['charges', 'drones', 'cargo', 'notes', 'set', 'engage', 'tags'] },
+  LABEL: { charges: 'Loaded ammo/charges', drones: 'Drones & fighters', cargo: 'Cargo', notes: 'Notes', engage: 'Engagements', tags: 'Tags', set: 'Set lineup' },
   // fits: [{ name, eft, notes, engage, tags:[names] }]
   open(fits, title) {
     this.items = fits.map(f => ({ ...f, p: FMT.parse(f.eft) })).filter(f => f.p);
@@ -3048,7 +3074,7 @@ const FITS = {
       LS.set(KEYS.fits, d);
     }
     d.schema ||= 1; d.tags ||= []; d.fits ||= [];
-    for (const f of d.fits) { f.tags ||= []; f.eft ||= ''; f.engage ||= []; f.notes ||= ''; }
+    for (const f of d.fits) { f.tags ||= []; f.eft ||= ''; f.engage ||= []; f.notes ||= ''; delete f.chars; delete f.from; }
     return d;
   },
   save(d) { LS.set(KEYS.fits, d); },
@@ -3087,29 +3113,161 @@ const FITS = {
   },
   bodyKey(eft) { return eft.replace(/\r/g, '').split('\n').slice(1).map(l => l.trim()).filter(Boolean).join('\n').toLowerCase(); },
 
+  // Fits EVE can no longer load (it lists them in red). We can spot the T3 cruiser change: 5 subsystems → 4.
+  outdated(eft) {
+    const p = this.parseEFT(eft); if (!p) return '';
+    const subs = p.sections.filter(([l]) => l === 'Subsystems').reduce((n, [, x]) => n + x.length, 0);
+    return subs > 4 ? `${subs} subsystems — T3 cruisers take 4 now` : '';
+  },
+  // ── Fit sets: fits flown together (e.g. "Abyssal L2 x3" = 2 Retributions + a Kirin) share one name and one set of notes ──
+  SETRX: /\bx\s?(\d{1,2})\s*$/i,
+  setSize(name) { const m = (name || '').match(this.SETRX); return m && +m[1] > 1 ? +m[1] : 0; },
+  members(d, sid) { return sid ? d.fits.filter(f => f.set === sid) : []; },
+  lineup(fs) {
+    const c = new Map();
+    fs.slice().sort((a, b) => this.classRank(this.fitClass(a)) - this.classRank(this.fitClass(b)) || Names.typeName(a.ship).localeCompare(Names.typeName(b.ship)))
+      .forEach(f => { const n = f.ship ? Names.typeName(f.ship) : '?'; c.set(n, (c.get(n) || 0) + 1); });
+    return [...c].map(([n, k]) => k > 1 ? `${n} ×${k}` : n).join(' + ');
+  },
+  mergeNotes(fs) { const u = [...new Set(fs.map(f => (f.notes || '').trim()).filter(Boolean))]; return u.join('\n\n'); },
+  // fits with the same "… xN" name become one set (unless you took one out on purpose)
+  autoSets(d) {
+    const by = new Map();
+    for (const f of d.fits) { if (f.noSet || !this.setSize(f.name)) continue; const k = f.name.trim().toLowerCase(); if (!by.has(k)) by.set(k, []); by.get(k).push(f); }
+    let made = 0;
+    for (const fs of by.values()) {
+      if (fs.length < 2) continue;
+      const sid = fs.find(f => f.set)?.set || this.uid('s');
+      const all = [...new Set([...fs, ...this.members(d, sid)])];
+      if (fs.every(f => f.set === sid)) continue;
+      const notes = this.mergeNotes(all);
+      all.forEach(f => { f.set = sid; f.notes = notes; f.name = fs[0].name; });
+      made++;
+    }
+    return made;
+  },
+  syncSet(d, f) { for (const m of this.members(d, f.set)) if (m !== f) { m.name = f.name; m.notes = f.notes; m.modified = f.modified; } },
+  setLabel(d, f) {
+    const ms = this.members(d, f.set); if (!ms.length) return '';
+    const want = this.setSize(f.name);
+    return `🔗 ${this.lineup(ms)}${want && want !== ms.length ? ` (${ms.length} of ${want})` : ''}`;
+  },
+
+  openSetDlg(fid) {
+    const d = this.data(), f = d.fits.find(x => x.id === fid); if (!f) return;
+    this.setFit = fid;
+    const ms = this.members(d, f.set);
+    $('#set-title').textContent = `Fit set — ${f.name}`;
+    $('#set-now').innerHTML = ms.length ? `<div class="set-banner">Now in: <b>${esc(f.name)}</b> — ${esc(this.lineup(ms))}</div>` : '<div class="muted">Not in a set.</div>';
+    const sets = [...new Set(d.fits.map(x => x.set).filter(Boolean))].filter(sid => sid !== f.set).map(sid => this.members(d, sid));
+    $('#set-pick').innerHTML = (ms.length ? `<option value="">(keep current set)</option>` : '') + `<option value="__new">➕ A new set (add the other fits to it next)</option>`
+      + sets.sort((a, b) => a[0].name.localeCompare(b[0].name)).map(m => `<option value="${esc(m[0].set)}">${esc(m[0].name)} — ${esc(this.lineup(m))}</option>`).join('');
+    $('#set-leave').style.display = ms.length ? '' : 'none';
+    $('#set-dlg').showModal();
+  },
+  applySet(choice) {
+    const d = this.data(), f = d.fits.find(x => x.id === this.setFit); if (!f) return;
+    const now = Date.now();
+    if (choice === '__leave') { delete f.set; f.noSet = true; f.modified = now; this.save(d); flash(`${f.name} is no longer in a set.`); }
+    else if (choice === '__new') { f.set = this.uid('s'); delete f.noSet; f.modified = now; this.save(d); flash('New set started — open another fit and add it to this set.'); }
+    else if (choice) {
+      const ms = this.members(d, choice); if (!ms.length) return;
+      const notes = this.mergeNotes([...ms, f]);
+      f.set = choice; delete f.noSet; f.name = ms[0].name; f.modified = now;
+      [...ms, f].forEach(m => m.notes = notes);
+      this.save(d); flash(`Added to "${ms[0].name}" — it now has ${ms.length + 1} fits.`);
+    }
+    $('#set-dlg').close(); this.render();
+  },
+
   // ── list ──
+  // Class order follows EVE's ship tree: small hulls first, capitals, then industrial.
+  CLASS_ORDER: ['Corvette', 'Shuttle', 'Capsule', 'Frigate', 'Assault Frigate', 'Interceptor', 'Covert Ops', 'Stealth Bomber', 'Electronic Attack Ship', 'Logistics Frigate', 'Expedition Frigate', 'Prototype Exploration Ship',
+    'Destroyer', 'Interdictor', 'Command Destroyer', 'Tactical Destroyer', 'Cruiser', 'Heavy Assault Cruiser', 'Heavy Interdiction Cruiser', 'Logistics', 'Combat Recon Ship', 'Force Recon Ship', 'Strategic Cruiser', 'Flag Cruiser',
+    'Combat Battlecruiser', 'Attack Battlecruiser', 'Command Ship', 'Battleship', 'Black Ops', 'Marauder', 'Carrier', 'Supercarrier', 'Force Auxiliary', 'Dreadnought', 'Lancer Dreadnought', 'Titan', 'Command Carrier',
+    'Hauler', 'Blockade Runner', 'Deep Space Transport', 'Freighter', 'Jump Freighter', 'Mining Barge', 'Exhumer', 'Industrial Command Ship', 'Capital Industrial Ship', 'Expedition Command Ship', 'Special Edition Yachts'],
+  classRank(c) { const i = this.CLASS_ORDER.indexOf(c); return i < 0 ? 999 : i; },
+  fitClass(f) { return (f.ship && Names.typeClass(f.ship)) || 'Unknown ship'; },
+  shown() {
+    const d = this.data(), q = $('#fit-search').value.trim().toLowerCase();
+    let list = d.fits.filter(f => (!this.favOnly || f.fav) && [...this.filter].every(t => f.tags.includes(t)));
+    if (q) list = list.filter(f => (f.name + '\n' + (Names.typeName(f.ship) || '') + '\n' + (Names.typeClass(f.ship) || '') + '\n' + (f.notes || '') + '\n' + f.eft).toLowerCase().includes(q));
+    return { d, q, list };
+  },
+  // which class / hull groups are expanded — kept in the ui settings so it survives reloads
+  tree() { const t = LS.get(KEYS.ui, {}).fitTree; return { c: new Set(t?.c || []), s: new Set(t?.s || []) }; },
+  saveTree(t) { const ui = LS.get(KEYS.ui, {}); ui.fitTree = { c: [...t.c], s: [...t.s] }; LS.set(KEYS.ui, ui); },
+  filtering() { return !!($('#fit-search').value.trim() || this.filter.size || this.favOnly); },
+  setAll(open) {
+    this.tmpClosed = new Set();
+    if (!open && this.filtering()) this.shown().list.forEach(f => { this.tmpClosed.add('c:' + this.fitClass(f)); this.tmpClosed.add('s:' + (f.ship || 0)); });
+    const t = { c: new Set(), s: new Set() };
+    if (open) this.data().fits.forEach(f => { t.c.add(this.fitClass(f)); t.s.add(String(f.ship || 0)); if (f.set) { t.c.add('🔗 Fit sets'); t.s.add('set:' + f.set); } });
+    this.saveTree(t); this.render();
+  },
   render() {
-    const d = this.data();
+    const { d, q, list } = this.shown();
     this.counts();
     this.loadThrown();
     $('#fit-tags').innerHTML = `<button class="chipbtn${this.favOnly ? ' on' : ''}" data-fav="1">★ Favorites</button>`
       + d.tags.map(t => `<button class="chipbtn${this.filter.has(t.id) ? ' on' : ''}" data-tag="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join('');
-    const q = $('#fit-search').value.trim().toLowerCase();
-    let list = d.fits.filter(f => (!this.favOnly || f.fav) && [...this.filter].every(t => f.tags.includes(t)));
-    if (q) list = list.filter(f => (f.name + '\n' + (Names.typeName(f.ship) || '') + '\n' + (Names.typeClass(f.ship) || '') + '\n' + (f.notes || '') + '\n' + f.eft).toLowerCase().includes(q));
-    list.sort((a, b) => (b.fav - a.fav) || (b.modified || 0) - (a.modified || 0));
     $('#fit-sum').textContent = `${list.length} of ${d.fits.length} fit${d.fits.length === 1 ? '' : 's'}`;
-    if (!d.fits.length) { $('#fit-list').innerHTML = '<div class="sso-info">No saved fits yet. Open a kill or loss on the Killboard and tap <b>★ Save fit</b>, or use <b>+ Paste fit</b> with a fit copied from the game or Pyfa.</div>'; return; }
-    $('#fit-list').innerHTML = list.length ? list.map(f => {
-      const tags = f.tags.map(id => this.tag(d, id)).filter(Boolean).map(t => `<span class="ptag" style="background:${t.color};color:${textOn(t.color)}">${esc(t.name)}</span>`).join('');
-      const head = `<div class="fit-card${this.open === f.id ? ' open' : ''}" data-fid="${f.id}">
+    const filtering = !!(q || this.filter.size || this.favOnly);
+    $('#fit-tree-hint').textContent = filtering ? 'Filter on — every match is shown open.' : 'Tap a class or ship to open it.';
+    if (!d.fits.length) { $('#fit-list').innerHTML = '<div class="sso-info">No saved fits yet. Open a kill or loss on the Killboard and tap <b>★ Save fit</b>, use <b>+ Paste fit</b> with a fit copied from the game or Pyfa, or bring in all your in-game fits through the <b>Import pool</b> tab.</div>'; return; }
+    if (!list.length) { $('#fit-list').innerHTML = '<div class="empty">No fits match.</div>'; return; }
+    // class → hull → fits
+    const classes = new Map();
+    for (const f of list) {
+      const c = this.fitClass(f), sk = String(f.ship || 0);
+      if (!classes.has(c)) classes.set(c, new Map());
+      const hulls = classes.get(c); if (!hulls.has(sk)) hulls.set(sk, []); hulls.get(sk).push(f);
+    }
+    const t = this.tree(), cur = d.fits.find(x => x.id === this.open);
+    // a fit that is open (e.g. just saved) keeps its class and hull open afterwards
+    if (cur && !filtering && (!t.c.has(this.fitClass(cur)) || !t.s.has(String(cur.ship || 0)))) { t.c.add(this.fitClass(cur)); t.s.add(String(cur.ship || 0)); this.saveTree(t); }
+    const tc = this.tmpClosed ||= new Set();
+    const openC = c => filtering ? !tc.has('c:' + c) : t.c.has(c);
+    const openS = sk => filtering ? !tc.has('s:' + sk) : t.s.has(sk);
+    const shipName = sk => +sk ? Names.typeName(+sk) : 'Unknown ship';
+    const favs = fs => fs.filter(f => f.fav).length;
+    const card = (f, where = 'hull') => {
+      const isOpen = this.open === f.id && (this.openIn || 'hull') === where;
+      const tags = f.tags.map(id => this.tag(d, id)).filter(Boolean).map(tg => `<span class="ptag" style="background:${tg.color};color:${textOn(tg.color)}">${esc(tg.name)}</span>`).join('');
+      return `<div class="fit-card${isOpen ? ' open' : ''}" data-fid="${f.id}">
         <img src="${typeIcon(f.ship || 0, 64)}" alt="" loading="lazy">
-        <div class="grow"><div class="nm">${esc(f.name)}</div><div class="cls">${esc(f.ship ? Names.typeName(f.ship) : 'Unknown ship')}${f.ship ? ' · ' + esc(Names.typeClass(f.ship)) : ''}</div><div class="ptags">${tags}</div></div>
-        <button class="fav${f.fav ? ' on' : ''}" data-favtoggle="${f.id}" title="Favorite">${f.fav ? '★' : '☆'}</button></div>`;
-      return head + (this.open === f.id ? this.detailHTML(d, f) : '');
-    }).join('') : '<div class="empty">No fits match.</div>';
-    const open = d.fits.find(x => x.id === this.open), det = $('#fit-list .fit-detail');
-    if (open && det) PCL.attachThrow($('.throw-grip', det), det, () => ({ title: open.name, eft: open.eft }));
+        <div class="grow"><div class="nm">${esc(f.name)}</div>${(info => info ? `<div class="cls">${esc(info)}</div>` : '')([this.setLabel(d, f), f.notes ? '📝 notes' : '', f.engage?.length ? `⚔ ${f.engage.length}` : '', this.outdated(f.eft) ? '⚠ outdated' : ''].filter(Boolean).join(' · '))}<div class="ptags">${tags}</div></div>
+        <button class="fav${f.fav ? ' on' : ''}" data-favtoggle="${f.id}" title="Favorite">${f.fav ? '★' : '☆'}</button></div>` + (isOpen ? this.detailHTML(d, f) : '');
+    };
+    // sets first: each set is one row, opening to all of its fits
+    const sids = [...new Set(list.map(f => f.set).filter(Boolean))].filter(sid => this.members(d, sid).length);
+    const SETC = '🔗 Fit sets';
+    let setsHTML = '';
+    if (sids.length) {
+      const oc = openC(SETC);
+      setsHTML = `<div class="tree-cls${oc ? ' open' : ''}" data-tcls="${esc(SETC)}"><span class="caret">▶</span><span class="grow">${SETC}</span><span class="tree-n">${sids.length} set${sids.length === 1 ? '' : 's'}</span></div>`;
+      if (oc) setsHTML += sids.map(sid => this.members(d, sid)).sort((a, b) => a[0].name.localeCompare(b[0].name)).map(ms => {
+        const sk = 'set:' + ms[0].set, os = openS(sk), want = this.setSize(ms[0].name);
+        ms.sort((a, b) => this.classRank(this.fitClass(a)) - this.classRank(this.fitClass(b)) || Names.typeName(a.ship).localeCompare(Names.typeName(b.ship)));
+        return `<div class="tree-ship${os ? ' open' : ''}" data-tship="${esc(sk)}"><span class="caret">▶</span><span class="set-ic">🔗</span><span class="grow"><span class="nm">${esc(ms[0].name)}</span><div class="cls">${esc(this.lineup(ms))}${want && want !== ms.length ? ` · <span class="orange">${ms.length} of ${want} saved</span>` : ''}</div></span><span class="tree-n">${ms.length}</span></div>`
+          + (os ? `<div class="tree-fits" data-in="${esc(sk)}">${ms.map(f => card(f, sk)).join('')}</div>` : '');
+      }).join('');
+    }
+    $('#fit-list').innerHTML = setsHTML + [...classes.entries()]
+      .sort((a, b) => this.classRank(a[0]) - this.classRank(b[0]) || a[0].localeCompare(b[0]))
+      .map(([c, hulls]) => {
+        const all = [...hulls.values()].flat(), oc = openC(c), fv = favs(all);
+        const head = `<div class="tree-cls${oc ? ' open' : ''}" data-tcls="${esc(c)}"><span class="caret">▶</span><span class="grow">${esc(c)}</span><span class="tree-n">${fv ? `★${fv} · ` : ''}${hulls.size} hull${hulls.size === 1 ? '' : 's'} · ${all.length} fit${all.length === 1 ? '' : 's'}</span></div>`;
+        if (!oc) return head;
+        return head + [...hulls.entries()].sort((a, b) => shipName(a[0]).localeCompare(shipName(b[0]))).map(([sk, fs]) => {
+          const os = openS(sk), fv2 = favs(fs);
+          fs.sort((a, b) => (b.fav - a.fav) || (b.modified || 0) - (a.modified || 0));
+          return `<div class="tree-ship${os ? ' open' : ''}" data-tship="${sk}"><span class="caret">▶</span><img src="${typeIcon(+sk || 0, 64)}" alt="" loading="lazy"><span class="nm grow">${esc(shipName(sk))}</span><span class="tree-n">${fv2 ? `★${fv2} · ` : ''}${fs.length}</span></div>`
+            + (os ? `<div class="tree-fits">${fs.map(f => card(f)).join('')}</div>` : '');
+        }).join('');
+      }).join('');
+    const det = $('#fit-list .fit-detail');
+    if (cur && det) PCL.attachThrow($('.throw-grip', det), det, () => ({ title: cur.name, eft: cur.eft }));
   },
   tab: 'fit',
   VERDICT: { engage: ['✅', 'Engage', 'green'], careful: ['⚠', 'Careful', 'gold'], avoid: ['❌', 'Avoid', 'red'] },
@@ -3117,7 +3275,10 @@ const FITS = {
     const p = this.parseEFT(f.eft);
     const secs = p ? p.sections.filter(([, s]) => s.length).map(([lbl, s]) => `<div class="slot-hdr">${lbl}</div>${s.map(l => `<div class="fl">${esc(l)}</div>`).join('')}`).join('') : '<div class="empty">Fit text could not be read.</div>';
     const eng = f.engage || [], t = this.tab;
-    const tabs = `<span class="seg fit-tabs" style="margin-bottom:10px"><button data-ftab="fit" class="${t === 'fit' ? 'on' : ''}">Fit</button><button data-ftab="notes" class="${t === 'notes' ? 'on' : ''}">Notes${f.notes ? ' •' : ''}</button><button data-ftab="engage" class="${t === 'engage' ? 'on' : ''}">Engagements${eng.length ? ` (${eng.length})` : ''}</button></span>`;
+    const sm = this.members(d, f.set);
+    const banner = sm.length ? `<div class="set-banner">🔗 <b>Set of ${sm.length}${this.setSize(f.name) && this.setSize(f.name) !== sm.length ? ` (name says ${this.setSize(f.name)})` : ''}:</b> ${esc(this.lineup(sm))}<div class="muted" style="font-size:11px">Name and notes are shared by every fit in this set.</div></div>` : '';
+    const od = this.outdated(f.eft);
+    const tabs = banner + (od ? `<div class="set-banner" style="border-color:#7a2a2a;background:#2a1414">⚠ <b>Outdated:</b> ${esc(od)}. EVE won't load this fit as is.</div>` : '') + `<span class="seg fit-tabs" style="margin-bottom:10px"><button data-ftab="fit" class="${t === 'fit' ? 'on' : ''}">Fit</button><button data-ftab="notes" class="${t === 'notes' ? 'on' : ''}">Notes${f.notes ? ' •' : ''}</button><button data-ftab="engage" class="${t === 'engage' ? 'on' : ''}">Engagements${eng.length ? ` (${eng.length})` : ''}</button></span>`;
     if (t === 'notes') return `<div class="drill fit-detail">${tabs}
       <textarea id="fit-notes-area" placeholder="Anything about this fit: how to fly it, range, overheating, what it struggles with…" style="min-height:160px">${esc(f.notes || '')}</textarea>
       <div class="cls muted" id="fit-notes-saved" style="margin-top:4px">Saved automatically.</div></div>`;
@@ -3141,6 +3302,7 @@ const FITS = {
         <button class="btn sm" data-act="pc">🖥 Send to PC</button>
         <button class="btn sm ghost" data-act="export">⇩ Export…</button>
         <button class="btn sm ghost" data-act="edit">✎ Edit</button>
+        <button class="btn sm ghost" data-act="set">🔗 ${sm.length ? 'Set…' : 'Add to set…'}</button>
         ${f.src?.km ? `<button class="btn sm ghost" data-act="km">☠ Killmail</button>` : ''}
         <span class="grow"></span><button class="btn sm red" data-act="del">Delete</button></div>
       <div class="cls" style="margin-top:6px">Saved ${fmtDate(f.created)}${f.modified && f.modified !== f.created ? ' · edited ' + fmtDate(f.modified) : ''}</div></div>`;
@@ -3171,7 +3333,7 @@ const FITS = {
 
   // ── Import pool: mass-imported fits waiting for review (kept apart from saved fits) ──
   view: 'saved', poolSel: new Set(), poolOpen: null, poolEditing: null,
-  pool() { const d = LS.get(KEYS.fitsInbox, null); return d && Array.isArray(d.fits) ? d : { schema: 1, fits: [] }; },
+  pool() { const d = LS.get(KEYS.fitsInbox, null); if (!d || !Array.isArray(d.fits)) return { schema: 1, fits: [] }; d.fits.forEach(f => { delete f.src; delete f.chars; }); return d; },
   savePool(d) { LS.set(KEYS.fitsInbox, d); },
   fitKey(ship, eft) { return (ship || 0) + '|' + this.bodyKey(eft); },
   setView(v) {
@@ -3188,16 +3350,16 @@ const FITS = {
   async importToPool(files, pasted) {
     const incoming = [], bad = [];
     for (const f of files) {
-      const t = (await f.text()).replace(/^﻿/, ''), src = f.name.replace(/\.(xml|txt)$/i, '');
+      const t = (await f.text()).replace(/^﻿/, '');
       try {
-        if (/^\s*</.test(t)) for (const x of FMT.fromXML(t)) incoming.push({ ...x, src });
-        else for (const eft of this.splitEFT(t)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '', src });
+        if (/^\s*</.test(t)) for (const x of FMT.fromXML(t)) incoming.push(x);
+        else for (const eft of this.splitEFT(t)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '' });
       } catch (e) { bad.push(`${f.name}: ${e.message}`); }
     }
-    if (pasted?.trim()) for (const eft of this.splitEFT(pasted)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '', src: 'pasted' });
-    const saved = new Set(this.data().fits.map(f => this.fitKey(f.ship, f.eft)));
+    if (pasted?.trim()) for (const eft of this.splitEFT(pasted)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '' });
+    const d = this.data(), saved = new Set(d.fits.map(f => this.fitKey(f.ship, f.eft)));
     const pd = this.pool(), inPool = new Set(pd.fits.map(f => this.fitKey(f.ship, f.eft)));
-    let added = 0, dupSaved = 0, dupPool = 0;
+    let added = 0, dupSaved = 0, dupPool = 0, old = 0;
     const now = Date.now();
     for (const x of incoming) {
       const p = this.parseEFT(x.eft); if (!p) continue;
@@ -3205,19 +3367,20 @@ const FITS = {
       if (saved.has(k)) { dupSaved++; continue; }
       if (inPool.has(k)) { dupPool++; continue; }
       inPool.add(k);
-      pd.fits.push({ id: this.uid('i'), name: (x.name || p.fitName || p.shipName).trim(), ship: p.ship, eft: x.eft, notes: x.notes || '', src: x.src, added: now + added });
+      pd.fits.push({ id: this.uid('i'), name: (x.name || p.fitName || p.shipName).trim(), ship: p.ship, eft: x.eft, notes: x.notes || '', added: now + added });
+      if (this.outdated(x.eft)) old++;
       added++;
     }
     this.savePool(pd);
     this.setView('pool');
     const dup = dupSaved + dupPool;
-    flash(`Added ${added} fit${added === 1 ? '' : 's'} to the import pool${dup ? ` · skipped ${dup} duplicate${dup === 1 ? '' : 's'}${dupSaved ? ` (${dupSaved} already saved)` : ''}` : ''}${bad.length ? ` · ⚠ ${bad.join('; ')}` : ''}.`, !added && !dup);
+    flash(`Added ${added} fit${added === 1 ? '' : 's'} to the import pool${dup ? ` · skipped ${dup} duplicate${dup === 1 ? '' : 's'}${dupSaved ? ` (${dupSaved} already saved)` : ''}` : ''}${old ? ` · ⚠ ${old} outdated (marked in the list)` : ''}${bad.length ? ` · ⚠ ${bad.join('; ')}` : ''}.`, !added && !dup);
     return { added, dupSaved, dupPool, bad };
   },
   poolShown() {
     const q = $('#pool-search').value.trim().toLowerCase();
     let list = this.pool().fits;
-    if (q) list = list.filter(f => (f.name + '\n' + (f.ship ? Names.typeName(f.ship) + '\n' + Names.typeClass(f.ship) : '') + '\n' + (f.src || '') + '\n' + f.eft).toLowerCase().includes(q));
+    if (q) list = list.filter(f => (f.name + '\n' + (f.ship ? Names.typeName(f.ship) + '\n' + Names.typeClass(f.ship) : '') + '\n' + f.eft).toLowerCase().includes(q));
     return list.slice().sort((a, b) => (Names.typeClass(a.ship) || 'zz').localeCompare(Names.typeClass(b.ship) || 'zz') || Names.typeName(a.ship).localeCompare(Names.typeName(b.ship)) || a.name.localeCompare(b.name));
   },
   renderPool() {
@@ -3238,7 +3401,7 @@ const FITS = {
       const open = this.poolOpen === f.id;
       return hdr + `<div class="fit-card${open ? ' open' : ''}" data-pid="${f.id}"><input type="checkbox" class="pool-cb" data-sel="${f.id}" ${this.poolSel.has(f.id) ? 'checked' : ''}>
         <img src="${typeIcon(f.ship || 0, 64)}" alt="" loading="lazy">
-        <div class="grow"><div class="nm">${esc(f.name)}</div><div class="cls">${esc(f.ship ? Names.typeName(f.ship) : 'Unknown ship')}${f.src ? ' · from ' + esc(f.src) : ''}</div></div></div>`
+        <div class="grow"><div class="nm">${esc(f.name)}</div><div class="cls">${esc(f.ship ? Names.typeName(f.ship) : 'Unknown ship')}${this.outdated(f.eft) ? ' · <span style="color:#e07070">⚠ ' + esc(this.outdated(f.eft)) + '</span>' : ''}${this.setSize(f.name) ? ` · 🔗 set of ${this.setSize(f.name)}` : ''}</div></div></div>`
         + (open ? this.poolDetail(f) : '');
     }).join('') || '<div class="empty">No fits match.</div>';
   },
@@ -3257,12 +3420,13 @@ const FITS = {
   moveToSaved(ids) {
     const pd = this.pool(), d = this.data(), now = Date.now();
     const moving = pd.fits.filter(f => ids.includes(f.id));
-    moving.forEach((f, i) => d.fits.push({ id: this.uid('f'), name: f.name, ship: f.ship, eft: f.eft, tags: [], fav: false, notes: f.notes || '', engage: [], from: f.src, created: now + i, modified: now + i }));
+    moving.forEach((f, i) => d.fits.push({ id: this.uid('f'), name: f.name, ship: f.ship, eft: f.eft, tags: [], fav: false, notes: f.notes || '', engage: [], created: now + i, modified: now + i }));
+    const grouped = this.autoSets(d);
     pd.fits = pd.fits.filter(f => !ids.includes(f.id));
     this.save(d); this.savePool(pd);
     ids.forEach(id => this.poolSel.delete(id));
     if (ids.includes(this.poolOpen)) this.poolOpen = null;
-    flash(`Moved ${moving.length} fit${moving.length === 1 ? '' : 's'} to Saved.`);
+    flash(`Moved ${moving.length} fit${moving.length === 1 ? '' : 's'} to Saved${grouped ? ` · ${grouped} fit set${grouped === 1 ? '' : 's'} grouped by their "x N" names` : ''}.`);
     this.renderPool();
   },
   discard(ids) {
@@ -3272,7 +3436,7 @@ const FITS = {
   },
   exportItems(fits) {
     const d = this.data();
-    return fits.map(f => ({ name: f.name, eft: f.eft, notes: f.notes || '', engage: f.engage || [], tags: (f.tags || []).map(id => this.tag(d, id)?.name).filter(Boolean) }));
+    return fits.map(f => { const ms = this.members(d, f.set); return { name: f.name, eft: f.eft, notes: f.notes || '', engage: f.engage || [], tags: (f.tags || []).map(id => this.tag(d, id)?.name).filter(Boolean), lineup: ms.length > 1 ? `Set of ${ms.length}: ${this.lineup(ms)}` : '' }; });
   },
   wirePool() {
     $('#fit-view').onclick = e => { const b = e.target.closest('button'); if (b) this.setView(b.dataset.v); };
@@ -3312,11 +3476,11 @@ const FITS = {
       if (card) { this.poolOpen = this.poolOpen === card.dataset.pid ? null : card.dataset.pid; this.renderPool(); }
     };
     $('#fit-export-all').onclick = () => {
-      const d = this.data(), q = $('#fit-search').value.trim().toLowerCase();
-      let list = d.fits.filter(f => (!this.favOnly || f.fav) && [...this.filter].every(t => f.tags.includes(t)));
-      if (q) list = list.filter(f => (f.name + '\n' + (Names.typeName(f.ship) || '') + '\n' + (f.notes || '') + '\n' + f.eft).toLowerCase().includes(q));
+      const { q, list } = this.shown();
       EXP.open(this.exportItems(list), `${list.length} fit${list.length === 1 ? '' : 's'}${this.filter.size || this.favOnly || q ? ' (current filter)' : ''}`);
     };
+    $('#fit-expand').onclick = () => this.setAll(true);
+    $('#fit-collapse').onclick = () => { this.open = null; this.setAll(false); };
   },
 
   // ── editor dialog ──
@@ -3365,7 +3529,8 @@ const FITS = {
       const f = d.fits.find(x => x.id === this.editId);
       const p = this.parseEFT(fits[0]);
       Object.assign(f, { name: $('#fit-name').value.trim() || p?.shipName || 'Fit', eft: fits[0], ship: p?.ship || f.ship, tags, fav, notes, modified: now });
-      this.save(d); this.open = f.id;
+      this.syncSet(d, f); this.autoSets(d);
+      this.save(d); this.open = f.id; this.openIn = 'hull';
       flash(`Saved ${f.name}.`);
     } else {
       let added = 0, dupes = [];
@@ -3374,10 +3539,12 @@ const FITS = {
         const dup = d.fits.find(x => this.bodyKey(x.eft) === this.bodyKey(eft) && x.ship === p?.ship);
         if (dup) { dupes.push(dup.name); return; }
         const name = (fits.length === 1 ? $('#fit-name').value.trim() : '') || p?.fitName || p?.shipName || 'Fit';
-        const f = { id: this.uid('f'), name, ship: p?.ship || null, eft, tags: [...tags], fav, notes, src: fits.length === 1 ? this.draft.src : null, created: now + i, modified: now + i };
-        d.fits.push(f); this.open = f.id; added++;
+        const f = { id: this.uid('f'), name, ship: p?.ship || null, eft, tags: [...tags], fav, notes, engage: [], src: fits.length === 1 ? this.draft.src : null, created: now + i, modified: now + i };
+        d.fits.push(f); this.open = f.id; this.openIn = 'hull'; added++;
       });
+      const grouped = this.autoSets(d);
       this.save(d);
+      if (grouped) setTimeout(() => flash(`Grouped into a fit set (same "… x${this.setSize(d.fits.find(x => x.id === this.open)?.name) || 'N'}" name) — notes are now shared.`), 1600);
       if (this.poolEditing && added) { const pd = this.pool(); pd.fits = pd.fits.filter(x => x.id !== this.poolEditing); this.savePool(pd); this.poolSel.delete(this.poolEditing); this.poolOpen = null; }
       flash(`${added ? `Saved ${added} fit${added > 1 ? 's' : ''}${this.poolEditing ? ' — removed from the import pool' : ''}.` : ''}${dupes.length ? ` Already saved: ${dupes.slice(0, 3).join(', ')}.` : ''}`, !added);
     }
@@ -3400,9 +3567,10 @@ const FITS = {
   sheets(d) {
     const hdr = cols => cols.map(v => ({ v, bold: true }));
     const tagNames = f => f.tags.map(id => this.tag(d, id)?.name).filter(Boolean).join('; ');
+    const setIds = [...new Set(d.fits.map(f => f.set).filter(Boolean))], setLabel = f => f.set ? `set ${setIds.indexOf(f.set) + 1}` : '';
     return [
-      { name: 'Fits', widths: [28, 18, 22, 9, 30, 60, 22, 40], rows: [hdr(['Name', 'Ship', 'Tags', 'Favorite', 'Notes', 'Fit (EFT)', 'Killmail', 'Engagements']),
-        ...d.fits.map(f => [{ v: f.name, bold: true, fill: this.tag(d, f.tags[0])?.color }, f.ship ? Names.typeName(f.ship) : '', tagNames(f), f.fav ? 'Yes' : 'No', f.notes || '', f.eft, f.src?.km ? `${f.src.km}:${f.src.hash || ''}` : '', this.engageText(f)])],
+      { name: 'Fits', widths: [28, 18, 22, 9, 30, 60, 22, 40, 14], rows: [hdr(['Name', 'Ship', 'Tags', 'Favorite', 'Notes', 'Fit (EFT)', 'Killmail', 'Engagements', 'Set']),
+        ...d.fits.map(f => [{ v: f.name, bold: true, fill: this.tag(d, f.tags[0])?.color }, f.ship ? Names.typeName(f.ship) : '', tagNames(f), f.fav ? 'Yes' : 'No', f.notes || '', f.eft, f.src?.km ? `${f.src.km}:${f.src.hash || ''}` : '', this.engageText(f), setLabel(f)])],
         validations: [{ col: 3, list: ['Yes', 'No'] }] },
       { name: 'Tags', widths: [20, 11], rows: [hdr(['Tag', 'Color']), ...d.tags.map(t => [{ v: t.name, fill: t.color, bold: true }, { v: t.color, fill: t.color }])] },
       { name: 'Read Me', widths: [16, 90], frozen: false, rows: [
@@ -3412,6 +3580,7 @@ const FITS = {
         ['Favorite', 'Yes / No'],
         ['Killmail', 'Optional link back to the killmail it came from (id:hash). Leave as is.'],
         ['Engagements', 'Ships this fit should fight or avoid, separated by ;  e.g.  Atron [engage] kite at 20km; Rifter [avoid]   (engage / careful / avoid)'],
+        ['Set', 'Fits with the same Set value are one fit set (flown together; name and notes shared). Any label works, e.g. abyss2. Blank = not in a set.'],
         ['Import', 'Fits with the same name and ship are updated; others are added.']] },
     ];
   },
@@ -3441,6 +3610,7 @@ const FITS = {
       if (km) f.src = { km: +km[1], hash: km[2] };
       if ('engagements' in r) f.engage = this.parseEngage(r.engagements);
       f.engage ||= [];
+      if ('set' in r) { const sv = r.set.trim(); if (sv) { f.set = sv; delete f.noSet; } else if (f.set) { delete f.set; f.noSet = true; } }
       this.save(d);
     }
     this.render();
@@ -3448,14 +3618,25 @@ const FITS = {
   },
 
   wire() {
-    $('#fit-search').oninput = () => this.render();
+    $('#fit-search').oninput = () => { this.tmpClosed = new Set(); this.render(); };
     $('#fit-tags').onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
+      this.tmpClosed = new Set();
       if (b.dataset.fav) this.favOnly = !this.favOnly;
       else if (this.filter.has(b.dataset.tag)) this.filter.delete(b.dataset.tag); else this.filter.add(b.dataset.tag);
       this.render();
     };
     $('#fit-list').onclick = async e => {
+      const th = e.target.closest('[data-tcls],[data-tship]');
+      if (th) {
+        if (this.filtering()) { const k = th.dataset.tcls != null ? 'c:' + th.dataset.tcls : 's:' + th.dataset.tship; this.tmpClosed.has(k) ? this.tmpClosed.delete(k) : this.tmpClosed.add(k); this.render(); return; }
+        const t = this.tree(), [set, k] = th.dataset.tcls != null ? [t.c, th.dataset.tcls] : [t.s, th.dataset.tship];
+        const cur = this.data().fits.find(x => x.id === this.open);
+        const wasOpen = th.classList.contains('open');
+        if (wasOpen) { set.delete(k); if (cur && (th.dataset.tcls != null ? this.fitClass(cur) === k : String(cur.ship || 0) === k)) this.open = null; }
+        else set.add(k);
+        this.saveTree(t); this.render(); return;
+      }
       const fav = e.target.closest('[data-favtoggle]');
       const d = this.data();
       const cur = d.fits.find(x => x.id === this.open);
@@ -3476,13 +3657,18 @@ const FITS = {
         if (act.dataset.act === 'pc') PCL.sendFit(f.name, f.eft);
         if (act.dataset.act === 'copy') navigator.clipboard.writeText(f.eft).then(() => flash('Fit copied — paste into Pyfa or the in-game fitting window (Import from clipboard).'), () => flash('Clipboard blocked by the browser.', true));
         if (act.dataset.act === 'edit') this.openEditor({ id: f.id });
+        if (act.dataset.act === 'set') this.openSetDlg(f.id);
         if (act.dataset.act === 'export') EXP.open(this.exportItems([f]));
         if (act.dataset.act === 'km') KMV.show(f.src.km, f.src.hash);
         if (act.dataset.act === 'del' && confirm(`Delete fit "${f.name}"?`)) { d.fits = d.fits.filter(x => x !== f); this.save(d); this.open = null; this.render(); }
         return;
       }
       const card = e.target.closest('[data-fid]');
-      if (card) { this.open = this.open === card.dataset.fid ? null : card.dataset.fid; this.tab = 'fit'; this.render(); }
+      if (card) {
+        const where = card.closest('[data-in]')?.dataset.in || 'hull';
+        const same = this.open === card.dataset.fid && (this.openIn || 'hull') === where;
+        this.open = same ? null : card.dataset.fid; this.openIn = where; this.tab = 'fit'; this.render();
+      }
     };
     let nt;
     $('#fit-list').addEventListener('input', e => {
@@ -3490,13 +3676,16 @@ const FITS = {
       clearTimeout(nt); $('#fit-notes-saved').textContent = 'Saving…';
       nt = setTimeout(() => {
         const d = this.data(), f = d.fits.find(x => x.id === this.open); if (!f) return;
-        f.notes = e.target.value; f.modified = Date.now(); this.save(d);
+        f.notes = e.target.value; f.modified = Date.now(); this.syncSet(d, f); this.save(d);
         const s = $('#fit-notes-saved'); if (s) s.textContent = 'Saved.';
       }, 400);
     });
     $('#fit-list').addEventListener('keydown', e => { if ((e.target.id === 'eng-ship' || e.target.id === 'eng-note') && e.key === 'Enter') { e.preventDefault(); this.addEngage(this.open); } });
     this.wirePool();
     $('#fit-paste').onclick = () => this.openEditor();
+    $('#set-close').onclick = () => $('#set-dlg').close();
+    $('#set-join').onclick = () => this.applySet($('#set-pick').value);
+    $('#set-leave').onclick = () => this.applySet('__leave');
     $('#fit-thrown-refresh').onclick = () => this.loadThrown(true);
     $('#fit-thrown-clear').onclick = () => this.hideThrown(true);
     $('#fit-thrown').onclick = e => {
