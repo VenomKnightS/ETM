@@ -178,6 +178,8 @@
   .flash.err { background:#2a1414; border-color:var(--red); }
   dialog { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:16px; max-width:640px; width:92vw; margin:auto; }
   dialog::backdrop { background:#000a; }
+  .mainstar { background:none; border:none; color:var(--dim); font-size:19px; cursor:pointer; padding:0 6px; line-height:1; }
+  .mainstar.on { color:var(--gold); }
   .throw-grip { touch-action:none; user-select:none; text-align:center; font-size:11px; color:var(--teal); border:1px dashed #2a5a5a; border-radius:var(--radius); padding:7px 0; margin-bottom:8px; cursor:grab; }
   .thrown { transition:transform .4s ease-in, opacity .4s ease-in !important; transform:translateY(-160%) scale(.85) !important; opacity:0; }
   .hbars { display:flex; gap:2px; align-items:flex-end; height:110px; }
@@ -480,7 +482,7 @@
     <div id="fit-list"></div>
   </div>
   <div class="card" id="fit-thrown-card" style="display:none">
-    <div class="label-row"><span class="title">🖥 Thrown fits — last 12 h</span><button class="btn sm ghost" id="fit-thrown-refresh">⟳</button></div>
+    <div class="label-row"><span class="title">🖥 Thrown fits — last 12 h</span><span class="row" style="gap:4px"><button class="btn sm ghost" id="fit-thrown-clear">Clear</button><button class="btn sm ghost" id="fit-thrown-refresh">⟳</button></span></div>
     <div id="fit-thrown"></div>
   </div>
 </div>
@@ -747,6 +749,7 @@ const KEYS = {
   plans: 'eft.plans.v1',                // { schema, plans: [...] }
   charsets: 'eft.charsets.v1',          // { schema, groups: [...], chars: [...] }
   device: 'eft.device.v1',              // { id, name } — this device, for sync
+  thrownHidden: 'eft.fits.thrownHidden.v1', // { clearedAt, hidden:[ts|title] } — thrown fits dismissed on this device
   pclink: 'eft.pclink.v1',              // { code } — PC link pairing (never included in backups)
   fits: 'eft.fits.v1',                  // { schema, tags: [...], fits: [...] }
   activePlan: 'eft.plans.active.v1',
@@ -2779,14 +2782,31 @@ const FITS = {
     catch (e) { $('#fit-thrown').innerHTML = `<div class="empty">Couldn't check: ${esc(e.message)}</div>`; return; }
     this.renderThrown();
   },
+  thrownKey: m => `${m.ts}|${m.title}`,
+  visibleThrown() {
+    const h = LS.get(KEYS.thrownHidden, { clearedAt: 0, hidden: [] });
+    const hidden = new Set(h.hidden || []);
+    return this.thrown.map((m, i) => ({ m, i })).filter(({ m }) => m.ts > (h.clearedAt || 0) && !hidden.has(this.thrownKey(m)));
+  },
+  hideThrown(all, i) {
+    const h = LS.get(KEYS.thrownHidden, { clearedAt: 0, hidden: [] });
+    if (all) { h.clearedAt = Math.max(Date.now(), ...this.thrown.map(m => m.ts)); h.hidden = []; }
+    else h.hidden = [...(h.hidden || []), this.thrownKey(this.thrown[i])];
+    const cutoff = Date.now() - 13 * 3600e3;   // the relay forgets after 12 h, so old entries can go
+    h.hidden = h.hidden.filter(k => +k.split('|')[0] > cutoff);
+    LS.set(KEYS.thrownHidden, h);
+    this.renderThrown();
+  },
   renderThrown() {
     const d = this.data(), keys = new Set(d.fits.map(f => this.bodyKey(f.eft)));
-    $('#fit-thrown').innerHTML = this.thrown.length ? this.thrown.map((m, i) => {
+    const vis = this.visibleThrown();
+    $('#fit-thrown-clear').disabled = !vis.length;
+    $('#fit-thrown').innerHTML = vis.length ? vis.map(({ m, i }) => {
       const p = this.parseEFT(this.splitEFT(m.text)[0] || ''), saved = keys.has(this.bodyKey(m.text));
       return `<div class="cs-list-row" style="cursor:default"><img src="${typeIcon(p?.ship || 0)}" width="28" height="28" alt="" style="border-radius:3px">
         <span class="grow">${esc(m.title)}<div class="cls muted" style="font-size:11px">${fmtDur((Date.now() - m.ts) / 1000)} ago${saved ? ' · saved' : ''}</div></span>
-        <button class="btn sm ghost" data-thrown-copy="${i}">⧉ Copy</button>${saved ? '' : `<button class="btn sm gold" data-thrown-save="${i}">★ Save</button>`}</div>`;
-    }).join('') : '<div class="empty">Nothing thrown in the last 12 hours.</div>';
+        <button class="btn sm ghost" data-thrown-copy="${i}">⧉ Copy</button>${saved ? '' : `<button class="btn sm gold" data-thrown-save="${i}">★ Save</button>`}<button class="btn sm ghost" data-thrown-hide="${i}" title="Remove from this list">✕</button></div>`;
+    }).join('') : `<div class="empty">${this.thrown.length ? 'Cleared. New fits you throw will show up here.' : 'Nothing thrown in the last 12 hours.'}</div>`;
   },
   filter: new Set(), favOnly: false, open: null, editId: null, draft: null,
   uid: p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -3022,7 +3042,9 @@ const FITS = {
     };
     $('#fit-paste').onclick = () => this.openEditor();
     $('#fit-thrown-refresh').onclick = () => this.loadThrown(true);
+    $('#fit-thrown-clear').onclick = () => this.hideThrown(true);
     $('#fit-thrown').onclick = e => {
+      const hd = e.target.closest('[data-thrown-hide]'); if (hd) { this.hideThrown(false, +hd.dataset.thrownHide); return; }
       const c = e.target.closest('[data-thrown-copy]'), sv = e.target.closest('[data-thrown-save]');
       if (c) { const m = this.thrown[+c.dataset.thrownCopy]; navigator.clipboard.writeText(m.text).then(() => flash('Fit copied — paste into Pyfa or EVE.'), () => flash('Clipboard blocked by the browser.', true)); }
       if (sv) { const m = this.thrown[+sv.dataset.thrownSave]; this.openEditor({ eft: m.text, name: m.title }); }
@@ -3382,7 +3404,7 @@ const CS = {
     $('#cs-c-list').innerHTML = list.length ? this.byAccount(d, list, (a, cs) => `<div class="pl-hdr">${esc(a)}</div>` + cs.map(c =>
       `<div class="cs-list-row${c.id === this.editId ? ' on' : ''}" data-cid="${c.id}"><span class="sw" style="background:${this.plateColor(d, c)}"></span>
         <span class="grow">${esc(c.name)} ${this.isMain(d, c) ? '<span class="chip gold">main</span>' : ''}</span>
-        <span class="muted" style="font-size:11px">${c.groups.length}</span></div>`).join(''))
+        <button class="mainstar${this.isMain(d, c) ? ' on' : ''}" data-mkmain="${c.id}" title="${this.isMain(d, c) ? 'Account main' : 'Make this the account main'}">${this.isMain(d, c) ? '★' : '☆'}</button></div>`).join(''))
       : '<div class="empty">No characters yet.</div>';
   },
 
@@ -3699,7 +3721,13 @@ const CS = {
     };
     $('#cs-c-new').onclick = () => { this.editId = null; this.render(); $('#cs-f-name').focus(); };
     $('#cs-c-search').oninput = () => this.renderCharList(this.data());
-    $('#cs-c-list').onclick = e => { const r = e.target.closest('[data-cid]'); if (!r) return; this.editId = r.dataset.cid; this.render(); };
+    $('#cs-c-list').onclick = e => {
+      const mk = e.target.closest('[data-mkmain]');
+      if (mk) { // one tap: this character becomes the account main, the old main becomes an alt
+        const d = this.data(), c = d.chars.find(x => x.id === mk.dataset.mkmain);
+        if (c && !this.isMain(d, c)) { for (const o of d.chars) if (o.account === c.account) o.main = o === c; this.save(d); flash(`★ ${c.name} is now the main on ${c.account}.`); }
+        this.render(); return;
+      } const r = e.target.closest('[data-cid]'); if (!r) return; this.editId = r.dataset.cid; this.render(); };
     const reCheck = () => this.renderFormChecks(this.data(), this.formGroupsState());
     $('#cs-f-groups').onchange = reCheck; $('#cs-f-conf').onchange = reCheck; $('#cs-f-hasconf').onchange = reCheck;
     $('#cs-f-color').oninput = () => $('#cs-f-gcolor').checked = false;
