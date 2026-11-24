@@ -496,7 +496,7 @@
       <button class="btn sm ghost" id="fit-tagmgr">🏷 Tags</button>
       <button class="btn sm ghost" id="fit-export" title="Spreadsheet backup with notes, tags, engagements">⇩ Spreadsheet</button>
       <button class="btn sm ghost" id="fit-import" title="Import a fits spreadsheet (or a .txt of EFT fits)">⇪ Spreadsheet</button>
-      <input type="file" id="fit-import-file" accept=".xlsx,.txt,text/plain" style="display:none">
+      <input type="file" id="fit-import-file" style="display:none">
     </div>
     <div class="row" id="fit-tags" style="margin-bottom:8px"></div>
     <div class="row" style="margin-bottom:6px"><span class="muted grow" id="fit-tree-hint" style="font-size:11px"></span><button class="btn sm ghost" id="fit-expand">▾ Expand all</button><button class="btn sm ghost" id="fit-collapse">▸ Collapse all</button></div>
@@ -525,7 +525,7 @@
 <dialog id="pool-dlg" style="max-width:520px">
   <div class="card-title">Import fits into the pool</div>
   <p class="muted" style="margin-bottom:8px">Choose the <b>.xml</b> files EVE exports (Fitting window → Fitting Management → Export to file) — select all your characters' files at once. Pyfa .xml exports and .txt files of EFT fits work too. Or paste many EFT fits below. Duplicates (same ship + modules) are skipped, including fits you've already saved.</p>
-  <input type="file" id="pool-files" multiple accept=".xml,.txt,application/xml,text/xml,text/plain">
+  <input type="file" id="pool-files" multiple>
   <textarea id="pool-text" placeholder="…or paste EFT fits here ([Ship, Name] …)" style="margin-top:8px;min-height:100px"></textarea>
   <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="pool-cancel">Cancel</button><button class="btn green" id="pool-go">Import to pool</button></div>
 </dialog>
@@ -3347,22 +3347,36 @@ const FITS = {
     $('#fit-view [data-v=saved]').textContent = `Saved (${this.data().fits.length})`;
     $('#fit-view [data-v=pool]').textContent = `Import pool (${this.pool().fits.length})`;
   },
+  // phones label files oddly, so the picker accepts anything and we work out the text encoding ourselves
+  async readText(f) {
+    const b = new Uint8Array(await f.arrayBuffer());
+    let enc = 'utf-8';
+    if (b[0] === 0xFF && b[1] === 0xFE) enc = 'utf-16le';
+    else if (b[0] === 0xFE && b[1] === 0xFF) enc = 'utf-16be';
+    else if (b.length > 3 && b[1] === 0 && b[3] === 0) enc = 'utf-16le';
+    else if (b.length > 3 && b[0] === 0 && b[2] === 0) enc = 'utf-16be';
+    return new TextDecoder(enc).decode(b).replace(/^\ufeff/, '');
+  },
   async importToPool(files, pasted) {
     const incoming = [], bad = [];
     for (const f of files) {
-      const t = (await f.text()).replace(/^﻿/, '');
       try {
+        const t = await this.readText(f), before = incoming.length;
         if (/^\s*</.test(t)) for (const x of FMT.fromXML(t)) incoming.push(x);
         else for (const eft of this.splitEFT(t)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '' });
+        if (incoming.length === before) bad.push(`${f.name}: no fits found in it`);
       } catch (e) { bad.push(`${f.name}: ${e.message}`); }
     }
-    if (pasted?.trim()) for (const eft of this.splitEFT(pasted)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '' });
+    if (pasted?.trim()) {
+      if (/^\s*</.test(pasted)) { try { incoming.push(...FMT.fromXML(pasted)); } catch (e) { bad.push('pasted text: ' + e.message); } }
+      else for (const eft of this.splitEFT(pasted)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '' });
+    }
     const d = this.data(), saved = new Set(d.fits.map(f => this.fitKey(f.ship, f.eft)));
     const pd = this.pool(), inPool = new Set(pd.fits.map(f => this.fitKey(f.ship, f.eft)));
-    let added = 0, dupSaved = 0, dupPool = 0, old = 0;
+    let added = 0, dupSaved = 0, dupPool = 0, old = 0, unread = 0;
     const now = Date.now();
     for (const x of incoming) {
-      const p = this.parseEFT(x.eft); if (!p) continue;
+      const p = this.parseEFT(x.eft); if (!p) { unread++; continue; }
       const k = this.fitKey(p.ship, x.eft);
       if (saved.has(k)) { dupSaved++; continue; }
       if (inPool.has(k)) { dupPool++; continue; }
@@ -3374,7 +3388,7 @@ const FITS = {
     this.savePool(pd);
     this.setView('pool');
     const dup = dupSaved + dupPool;
-    flash(`Added ${added} fit${added === 1 ? '' : 's'} to the import pool${dup ? ` · skipped ${dup} duplicate${dup === 1 ? '' : 's'}${dupSaved ? ` (${dupSaved} already saved)` : ''}` : ''}${old ? ` · ⚠ ${old} outdated (marked in the list)` : ''}${bad.length ? ` · ⚠ ${bad.join('; ')}` : ''}.`, !added && !dup);
+    flash(`Added ${added} fit${added === 1 ? '' : 's'} to the import pool${dup ? ` · skipped ${dup} duplicate${dup === 1 ? '' : 's'}${dupSaved ? ` (${dupSaved} already saved)` : ''}` : ''}${old ? ` · ⚠ ${old} outdated (marked in the list)` : ''}${unread ? ` · ⚠ ${unread} with a ship name we don't recognise` : ''}${bad.length ? ` · ⚠ ${bad.join('; ')}` : ''}.`, !added && !dup);
     return { added, dupSaved, dupPool, bad };
   },
   poolShown() {
@@ -3520,6 +3534,9 @@ const FITS = {
   },
   saveEditor() {
     const d = this.data();
+    if (!this.editId && /^\s*<[?a-z]/i.test($('#fit-eft').value)) { // pasted an EVE .xml export: several fits → import pool
+      const text = $('#fit-eft').value; $('#fit-dlg').close(); this.setView('pool'); this.importToPool([], text); return;
+    }
     const fits = this.splitEFT($('#fit-eft').value);
     if (!fits.length) { flash('That doesn\'t look like a fit — the first line should be like [Merlin, My Fit].', true); return; }
     const tags = $$('#fit-dlg-tags input[type=checkbox]:checked').map(i => i.value);
@@ -3586,9 +3603,8 @@ const FITS = {
   },
   async importFile(file) {
     const buf = new Uint8Array(await file.arrayBuffer());
-    if (!(buf[0] === 0x50 && buf[1] === 0x4b)) { // plain text: one or more EFT fits
-      const text = new TextDecoder().decode(buf);
-      this.openEditor({ eft: text }); return;
+    if (!(buf[0] === 0x50 && buf[1] === 0x4b)) { // not a spreadsheet: an EVE .xml export or EFT text → it goes to the import pool for review
+      this.setView('pool'); await this.importToPool([file], ''); return;
     }
     const book = await XLSX.parse(buf);
     const rowsOf = key => { const k = Object.keys(book).find(x => x.trim().toLowerCase() === key); return k ? book[k].filter(r => r && r.some(x => String(x).trim())) : []; };
