@@ -178,6 +178,11 @@
   .flash.err { background:#2a1414; border-color:var(--red); }
   dialog { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:16px; max-width:640px; width:92vw; margin:auto; }
   dialog::backdrop { background:#000a; }
+  .pool-cb { width:18px; height:18px; flex:none; }
+  .eng-row { display:flex; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #0d1824; }
+  .eng-row img { width:30px; height:30px; border-radius:3px; background:#000; }
+  .eng-row .chip { cursor:pointer; background:none; font-size:11px; padding:3px 8px; }
+  .fit-tabs button { padding:4px 10px; }
   .mainstar { background:none; border:none; color:var(--dim); font-size:19px; cursor:pointer; padding:0 6px; line-height:1; }
   .mainstar.on { color:var(--gold); }
   .throw-grip { touch-action:none; user-select:none; text-align:center; font-size:11px; color:var(--teal); border:1px dashed #2a5a5a; border-radius:var(--radius); padding:7px 0; margin-bottom:8px; cursor:grab; }
@@ -466,26 +471,64 @@
 
 <!-- ══════════ FITS ══════════ -->
 <div id="page-fits" class="page">
-  <div class="card">
+  <div class="row" style="margin-bottom:10px"><span class="seg" id="fit-view"><button data-v="saved" class="on">Saved</button><button data-v="pool">Import pool</button></span></div>
+  <div class="card" id="fit-saved-pane">
     <div class="label-row"><span class="title">Saved fits</span><span class="sub" id="fit-sum"></span></div>
     <div class="row" style="margin-bottom:8px">
       <input id="fit-search" type="text" placeholder="search name, ship, module…" class="grow" style="min-width:150px">
       <button class="btn sm green" id="fit-paste">+ Paste fit</button>
       <button class="btn sm gold" id="fit-popular">🛠 Popular fits…</button>
+      <button class="btn sm" id="fit-export-all" title="Export the fits shown (EFT, EVE XML or forum text)">⇩ Export…</button>
       <button class="btn sm ghost" data-pcl-open="1">🖥 PC link</button>
       <button class="btn sm ghost" id="fit-tagmgr">🏷 Tags</button>
-      <button class="btn sm ghost" id="fit-export">⇩ Export .xlsx</button>
-      <button class="btn sm ghost" id="fit-import">⇪ Import</button>
+      <button class="btn sm ghost" id="fit-export" title="Spreadsheet backup with notes, tags, engagements">⇩ Spreadsheet</button>
+      <button class="btn sm ghost" id="fit-import" title="Import a fits spreadsheet (or a .txt of EFT fits)">⇪ Spreadsheet</button>
       <input type="file" id="fit-import-file" accept=".xlsx,.txt,text/plain" style="display:none">
     </div>
     <div class="row" id="fit-tags" style="margin-bottom:8px"></div>
     <div id="fit-list"></div>
+  </div>
+  <div class="card" id="fit-pool-pane" style="display:none">
+    <div class="label-row"><span class="title">Import pool — review before saving</span><span class="sub" id="pool-sum"></span></div>
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn sm green" id="pool-import">⇪ Import fits…</button>
+      <input id="pool-search" type="text" placeholder="search name, ship, character, module…" class="grow" style="min-width:150px">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn sm ghost" id="pool-all">☑ All shown</button>
+      <button class="btn sm green" id="pool-move">✓ Move to saved</button>
+      <button class="btn sm" id="pool-export">⇩ Export</button>
+      <span class="grow"></span><button class="btn sm red" id="pool-discard">🗑 Discard</button>
+    </div>
+    <div id="pool-list"></div>
   </div>
   <div class="card" id="fit-thrown-card" style="display:none">
     <div class="label-row"><span class="title">🖥 Thrown fits — last 12 h</span><span class="row" style="gap:4px"><button class="btn sm ghost" id="fit-thrown-clear">Clear</button><button class="btn sm ghost" id="fit-thrown-refresh">⟳</button></span></div>
     <div id="fit-thrown"></div>
   </div>
 </div>
+
+<dialog id="pool-dlg" style="max-width:520px">
+  <div class="card-title">Import fits into the pool</div>
+  <p class="muted" style="margin-bottom:8px">Choose the <b>.xml</b> files EVE exports (Fitting window → Fitting Management → Export to file) — select all your characters' files at once. Pyfa .xml exports and .txt files of EFT fits work too. Or paste many EFT fits below. Duplicates (same ship + modules) are skipped, including fits you've already saved.</p>
+  <input type="file" id="pool-files" multiple accept=".xml,.txt,application/xml,text/xml,text/plain">
+  <textarea id="pool-text" placeholder="…or paste EFT fits here ([Ship, Name] …)" style="margin-top:8px;min-height:100px"></textarea>
+  <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" id="pool-cancel">Cancel</button><button class="btn green" id="pool-go">Import to pool</button></div>
+</dialog>
+
+<dialog id="exp-dlg" style="max-width:640px">
+  <div class="card-title" id="exp-title">Export</div>
+  <div id="exp-fmt" class="checks" style="margin-bottom:8px">
+    <label><input type="radio" name="exp-fmt" value="eft" checked> EFT text (Pyfa / EVE clipboard)</label>
+    <label><input type="radio" name="exp-fmt" value="xml"> EVE XML file (in-game Import)</label>
+    <label><input type="radio" name="exp-fmt" value="forum"> Forum / Discord text</label>
+  </div>
+  <div class="muted" style="font-size:11px;margin-bottom:4px">Include:</div>
+  <div id="exp-opts" class="checks" style="margin-bottom:8px"></div>
+  <div id="exp-hint" class="cls muted" style="font-size:11px;margin-bottom:6px"></div>
+  <textarea id="exp-preview" readonly spellcheck="false" style="font-family:Consolas,monospace;font-size:12px;min-height:220px"></textarea>
+  <div class="row" style="margin-top:10px"><button class="btn green" id="exp-copy">⧉ Copy</button><button class="btn" id="exp-download">⇩ Download</button><button class="btn ghost" id="exp-pc">🖥 Send to PC</button><span class="grow"></span><button class="btn ghost" id="exp-close">Close</button></div>
+</dialog>
 
 <dialog id="pop-dlg" style="max-width:420px">
   <div class="card-title">Popular fits for a ship</div>
@@ -514,7 +557,7 @@
     <label>Ship</label><div id="fit-ship"></div>
     <label>Tags</label><div class="checks" id="fit-dlg-tags"></div>
     <label>Favorite</label><label class="muted"><input type="checkbox" id="fit-fav"> ★ Pin to the top</label>
-    <label>Notes</label><input id="fit-notes" type="text" placeholder="e.g. kite at 20 km, needs Caldari Frigate IV">
+    <label>Notes</label><textarea id="fit-notes" rows="3" style="min-height:60px" placeholder="e.g. kite at 20 km, needs Caldari Frigate IV"></textarea>
   </div>
   <div class="muted" style="margin:10px 0 4px">Fit text (EFT — what Pyfa and the game copy):</div>
   <textarea id="fit-eft" spellcheck="false" placeholder="[Merlin, Brawler]&#10;Damage Control II&#10;…"></textarea>
@@ -749,6 +792,7 @@ const KEYS = {
   plans: 'eft.plans.v1',                // { schema, plans: [...] }
   charsets: 'eft.charsets.v1',          // { schema, groups: [...], chars: [...] }
   device: 'eft.device.v1',              // { id, name } — this device, for sync
+  fitsInbox: 'eft.fits.inbox.v1',        // { schema, fits:[...] } — mass-imported fits awaiting review
   thrownHidden: 'eft.fits.thrownHidden.v1', // { clearedAt, hidden:[ts|title] } — thrown fits dismissed on this device
   pclink: 'eft.pclink.v1',              // { code } — PC link pairing (never included in backups)
   fits: 'eft.fits.v1',                  // { schema, tags: [...], fits: [...] }
@@ -2766,6 +2810,192 @@ const PCL = {
 };
 
 // ════════════════════════════════════════════════════════════════
+//  FIT FORMATS — EFT (Pyfa / EVE clipboard), EVE XML (in-game Import from file), forum text
+//  XML layout matches the EVE client and Pyfa: <fittings><fitting name><description value/><shipType value/>
+//  <hardware slot="low slot 0" type/> … <hardware qty slot="drone bay|fighter bay|cargo" type/>
+// ════════════════════════════════════════════════════════════════
+const FMT = {
+  _kinds: null,
+  kind(name) { // 'drone' | 'fighter' | null, from the bundled game data
+    if (!this._kinds) {
+      this._kinds = new Map();
+      for (const [, v] of Object.entries(SDE.other)) {
+        const g = SDE.typeGroups[v[1]] || '';
+        if (/Drone/.test(g)) this._kinds.set(v[0].toLowerCase(), 'drone');
+        else if (/Fighter/.test(g)) this._kinds.set(v[0].toLowerCase(), 'fighter');
+      }
+    }
+    return this._kinds.get((name || '').trim().toLowerCase()) || null;
+  },
+  // EFT text → structure
+  parse(eft) {
+    const lines = (eft || '').replace(/\r/g, '').split('\n');
+    const head = (lines[0] || '').trim().match(/^\[([^,\]]+)(?:,\s*([^\]]*))?\]$/);
+    if (!head) return null;
+    const p = { shipName: head[1].trim(), name: (head[2] || '').trim(), racks: { low: [], mid: [], high: [], rig: [], sub: [] }, drones: [], fighters: [], cargo: [], other: [] };
+    p.ship = FITS.shipByName(p.shipName);
+    // racks are positional: an empty rack is an empty section, so split on exactly one blank line
+    const body = lines.slice(1).map(l => l.replace(/\s+$/, '')).join('\n').replace(/\n+$/, '');
+    const sections = body ? body.split('\n\n').map(s => s.split('\n').map(x => x.trim()).filter(Boolean)) : [];
+    const stack = l => { const m = l.match(/^(.+?)\s+x(\d+)$/i); return m ? { name: m[1].trim(), qty: +m[2] } : null; };
+    const mod = l => {
+      if (/^\[empty .* slot\]$/i.test(l)) return null;
+      const off = /\s*\/offline$/i.test(l); l = l.replace(/\s*\/offline$/i, '');
+      const [m, c] = l.split(',').map(x => x.trim());
+      return { mod: m, charge: c || '', offline: off };
+    };
+    const rackNames = ['low', 'mid', 'high', 'rig'];
+    sections.forEach((sec, i) => {
+      if (i < 4 && !sec.every(l => stack(l))) { for (const l of sec) { const x = mod(l); if (x) p.racks[rackNames[i]].push(x); } return; }
+      if (sec.length && !sec.some(l => stack(l))) { for (const l of sec) { const x = mod(l); if (x) (i === 4 ? p.racks.sub : p.other).push(x); } return; }
+      for (const l of sec) {
+        const s = stack(l); if (!s) { p.other.push({ mod: l }); continue; }
+        const k = this.kind(s.name);
+        (k === 'drone' ? p.drones : k === 'fighter' ? p.fighters : p.cargo).push(s);
+      }
+    });
+    return p;
+  },
+  chargesOf(p) { // loaded charges → { name: count } (one load per module, for cargo)
+    const c = {};
+    for (const r of Object.values(p.racks)) for (const m of r) if (m.charge) c[m.charge] = (c[m.charge] || 0) + 1;
+    return c;
+  },
+  toEFT(p, o = {}, title) {
+    const rack = r => p.racks[r].map(m => m.mod + (o.charges !== false && m.charge ? ', ' + m.charge : '') + (m.offline ? ' /OFFLINE' : ''));
+    const out = [`[${p.shipName}, ${title ?? p.name}]`];
+    const blocks = [rack('low'), rack('mid'), rack('high'), rack('rig')];
+    if (p.racks.sub.length) blocks.push(rack('sub'));
+    let s = blocks.map(b => b.join('\n')).join('\n\n');
+    const extra = [];
+    if (o.drones !== false && p.drones.length) extra.push(p.drones.map(d => `${d.name} x${d.qty}`).join('\n'));
+    if (o.drones !== false && p.fighters.length) extra.push(p.fighters.map(d => `${d.name} x${d.qty}`).join('\n'));
+    if (o.cargo !== false && p.cargo.length) extra.push(p.cargo.map(d => `${d.name} x${d.qty}`).join('\n'));
+    if (extra.length) s += '\n\n\n' + extra.join('\n\n');
+    return out[0] + '\n' + s.replace(/\n{4,}/g, '\n\n\n') + '\n';
+  },
+  xmlEsc: s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+  // items: [{ p, name, notes }]
+  toXML(items, o = {}) {
+    const x = this.xmlEsc, L = ['<?xml version="1.0" ?>', '<fittings>'];
+    for (const { p, name, notes } of items) {
+      L.push(`  <fitting name="${x(name || p.name || p.shipName)}">`);
+      const desc = o.notes !== false && notes ? (notes.length > 400 ? notes.slice(0, 397) + '...' : notes).replace(/\r?\n/g, '<br>') : '';
+      L.push(`    <description value="${x(desc)}"/>`);
+      L.push(`    <shipType value="${x(p.shipName)}"/>`);
+      for (const [r, slot] of [['low', 'low'], ['mid', 'med'], ['high', 'hi'], ['rig', 'rig'], ['sub', 'subsystem']])
+        p.racks[r].forEach((m, i) => L.push(`    <hardware slot="${slot} slot ${i}" type="${x(m.mod)}"/>`));
+      if (o.drones !== false) {
+        for (const d of p.drones) L.push(`    <hardware qty="${d.qty}" slot="drone bay" type="${x(d.name)}"/>`);
+        for (const d of p.fighters) L.push(`    <hardware qty="${d.qty}" slot="fighter bay" type="${x(d.name)}"/>`);
+      }
+      const cargo = {};
+      if (o.charges !== false) Object.assign(cargo, this.chargesOf(p));
+      if (o.cargo !== false) for (const c of p.cargo) cargo[c.name] = (cargo[c.name] || 0) + c.qty;
+      for (const [n, q] of Object.entries(cargo)) L.push(`    <hardware qty="${q}" slot="cargo" type="${x(n)}"/>`);
+      L.push('  </fitting>');
+    }
+    L.push('</fittings>');
+    return L.join('\n') + '\n';
+  },
+  // EVE / Pyfa XML file → [{ name, eft, notes }]
+  fromXML(text) {
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('That file is not valid XML.');
+    const fits = [...doc.getElementsByTagName('fitting')];
+    if (!fits.length) throw new Error('No <fitting> entries found — is this an EVE fittings export?');
+    return fits.map(f => {
+      const ship = f.getElementsByTagName('shipType')[0]?.getAttribute('value') || 'Unknown ship';
+      const name = f.getAttribute('name') || ship;
+      const notes = (f.getElementsByTagName('description')[0]?.getAttribute('value') || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+      const racks = { low: [], med: [], hi: [], rig: [], subsystem: [] }, drones = [], cargo = [];
+      for (const h of f.getElementsByTagName('hardware')) {
+        const slot = (h.getAttribute('slot') || '').toLowerCase(), type = h.getAttribute('base_type') || h.getAttribute('type') || '', qty = +(h.getAttribute('qty') || 1);
+        const m = slot.match(/^(low|med|hi|rig|subsystem) slot (\d+)$/);
+        if (m) racks[m[1]][+m[2]] = type;
+        else if (slot === 'drone bay' || slot === 'fighter bay') drones.push(`${type} x${qty}`);
+        else if (slot === 'cargo') cargo.push(`${type} x${qty}`);
+      }
+      const r = k => racks[k].filter(Boolean).join('\n');
+      let eft = `[${ship}, ${name}]\n` + [r('low'), r('med'), r('hi'), r('rig')].join('\n\n');
+      if (racks.subsystem.filter(Boolean).length) eft += '\n\n' + r('subsystem');
+      const extra = [drones.join('\n'), cargo.join('\n')].filter(Boolean);
+      if (extra.length) eft += '\n\n\n' + extra.join('\n\n');
+      return { name, eft: eft + '\n', notes };
+    });
+  },
+  // Readable text for forums / Discord: EFT block plus optional notes, engagements, tags
+  toForum(items, o = {}) {
+    return items.map(({ p, name, notes, engage, tags }) => {
+      const parts = [`${name || p.name} (${p.shipName})`, '', this.toEFT(p, o, name).trim()];
+      if (o.notes !== false && notes) parts.push('', 'Notes:', notes.trim());
+      if (o.engage !== false && engage?.length) {
+        const g = { engage: 'Engage', careful: 'Careful', avoid: 'Avoid' };
+        parts.push('', 'Engagements:');
+        for (const v of ['engage', 'careful', 'avoid']) {
+          const es = engage.filter(e => e.v === v); if (!es.length) continue;
+          parts.push(`  ${g[v]}: ` + es.map(e => Names.typeName(e.ship) + (e.n ? ` (${e.n})` : '')).join(', '));
+        }
+      }
+      if (o.tags !== false && tags?.length) parts.push('', 'Tags: ' + tags.join(', '));
+      return parts.join('\n');
+    }).join('\n\n' + '─'.repeat(30) + '\n\n') + '\n';
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  EXPORT DIALOG — pick a format and what to include (like EVEMon's export)
+// ════════════════════════════════════════════════════════════════
+const EXP = {
+  items: [], title: '',
+  OPTS: { eft: ['charges', 'drones', 'cargo'], xml: ['charges', 'drones', 'cargo', 'notes'], forum: ['charges', 'drones', 'cargo', 'notes', 'engage', 'tags'] },
+  LABEL: { charges: 'Loaded ammo/charges', drones: 'Drones & fighters', cargo: 'Cargo', notes: 'Notes', engage: 'Engagements', tags: 'Tags' },
+  // fits: [{ name, eft, notes, engage, tags:[names] }]
+  open(fits, title) {
+    this.items = fits.map(f => ({ ...f, p: FMT.parse(f.eft) })).filter(f => f.p);
+    if (!this.items.length) { flash('Nothing to export.', true); return; }
+    $('#exp-title').textContent = `Export — ${title || (this.items.length === 1 ? this.items[0].name : this.items.length + ' fits')}`;
+    const ui = LS.get(KEYS.ui, {}), o = ui.exp || { fmt: 'eft', opts: {} };
+    $$('#exp-fmt input').forEach(r => r.checked = r.value === o.fmt);
+    this.saved = o.opts || {};
+    this.renderOpts(); this.update();
+    $('#exp-dlg').showModal();
+  },
+  fmt() { return $('#exp-fmt input:checked')?.value || 'eft'; },
+  renderOpts() {
+    const f = this.fmt();
+    $('#exp-opts').innerHTML = this.OPTS[f].map(k => `<label><input type="checkbox" data-opt="${k}" ${this.saved[k] !== false ? 'checked' : ''}> ${this.LABEL[k]}</label>`).join('');
+    $('#exp-hint').textContent = {
+      eft: 'EFT text — paste into Pyfa (Import from clipboard) or EVE’s fitting window (Import from clipboard). Multiple fits are separated by blank lines.',
+      xml: 'EVE XML — in EVE: Fitting window → Fitting Management → Import from file. Pyfa can open it too. Notes become the fit description; ammo goes to cargo.',
+      forum: 'Readable text for forums, Discord or notes: each fit as an EFT block with your notes, engagements and tags under it.',
+    }[f];
+  },
+  opts() { const o = {}; $$('#exp-opts input').forEach(c => o[c.dataset.opt] = c.checked); return o; },
+  text() {
+    const f = this.fmt(), o = this.opts();
+    if (f === 'xml') return FMT.toXML(this.items, o);
+    if (f === 'forum') return FMT.toForum(this.items, o);
+    return this.items.map(it => FMT.toEFT(it.p, o, it.name)).join('\n\n');
+  },
+  update() {
+    $('#exp-preview').value = this.text();
+    const ui = LS.get(KEYS.ui, {}); this.saved = { ...this.saved, ...this.opts() }; ui.exp = { fmt: this.fmt(), opts: this.saved }; LS.set(KEYS.ui, ui);
+  },
+  wire() {
+    $('#exp-fmt').onchange = () => { this.renderOpts(); this.update(); };
+    $('#exp-opts').onchange = () => this.update();
+    $('#exp-close').onclick = () => $('#exp-dlg').close();
+    $('#exp-copy').onclick = () => navigator.clipboard.writeText(this.text()).then(() => flash('Copied.'), () => flash('Clipboard blocked by the browser.', true));
+    $('#exp-download').onclick = () => {
+      const f = this.fmt(), base = (this.items.length === 1 ? this.items[0].name : `eve-fits-${fmtDate(Date.now())}`).replace(/[\\/:*?"<>|]+/g, '_');
+      Plans.download(base + (f === 'xml' ? '.xml' : '.txt'), this.text(), f === 'xml' ? 'application/xml' : 'text/plain');
+    };
+    $('#exp-pc').onclick = () => PCL.send('fit', $('#exp-title').textContent.replace(/^Export — /, ''), this.text());
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
 //  FITS — saved fittings (EFT text), favorites, tags
 //  Stored under KEYS.fits: { schema:1, tags:[{id,name,color}],
 //    fits:[{id,name,ship,eft,tags:[tagId],fav,notes,src:{km,hash},created,modified}] }
@@ -2818,7 +3048,7 @@ const FITS = {
       LS.set(KEYS.fits, d);
     }
     d.schema ||= 1; d.tags ||= []; d.fits ||= [];
-    for (const f of d.fits) { f.tags ||= []; f.eft ||= ''; }
+    for (const f of d.fits) { f.tags ||= []; f.eft ||= ''; f.engage ||= []; f.notes ||= ''; }
     return d;
   },
   save(d) { LS.set(KEYS.fits, d); },
@@ -2860,6 +3090,7 @@ const FITS = {
   // ── list ──
   render() {
     const d = this.data();
+    this.counts();
     this.loadThrown();
     $('#fit-tags').innerHTML = `<button class="chipbtn${this.favOnly ? ' on' : ''}" data-fav="1">★ Favorites</button>`
       + d.tags.map(t => `<button class="chipbtn${this.filter.has(t.id) ? ' on' : ''}" data-tag="${t.id}" style="--c:${t.color}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join('');
@@ -2880,28 +3111,224 @@ const FITS = {
     const open = d.fits.find(x => x.id === this.open), det = $('#fit-list .fit-detail');
     if (open && det) PCL.attachThrow($('.throw-grip', det), det, () => ({ title: open.name, eft: open.eft }));
   },
+  tab: 'fit',
+  VERDICT: { engage: ['✅', 'Engage', 'green'], careful: ['⚠', 'Careful', 'gold'], avoid: ['❌', 'Avoid', 'red'] },
   detailHTML(d, f) {
     const p = this.parseEFT(f.eft);
     const secs = p ? p.sections.filter(([, s]) => s.length).map(([lbl, s]) => `<div class="slot-hdr">${lbl}</div>${s.map(l => `<div class="fl">${esc(l)}</div>`).join('')}`).join('') : '<div class="empty">Fit text could not be read.</div>';
-    return `<div class="drill fit-detail"><div class="throw-grip" title="Swipe up or tap to throw this fit to your PC">⇧ swipe up or tap — throw to PC</div>${f.notes ? `<div class="muted" style="margin-bottom:6px">📝 ${esc(f.notes)}</div>` : ''}${secs}
+    const eng = f.engage || [], t = this.tab;
+    const tabs = `<span class="seg fit-tabs" style="margin-bottom:10px"><button data-ftab="fit" class="${t === 'fit' ? 'on' : ''}">Fit</button><button data-ftab="notes" class="${t === 'notes' ? 'on' : ''}">Notes${f.notes ? ' •' : ''}</button><button data-ftab="engage" class="${t === 'engage' ? 'on' : ''}">Engagements${eng.length ? ` (${eng.length})` : ''}</button></span>`;
+    if (t === 'notes') return `<div class="drill fit-detail">${tabs}
+      <textarea id="fit-notes-area" placeholder="Anything about this fit: how to fly it, range, overheating, what it struggles with…" style="min-height:160px">${esc(f.notes || '')}</textarea>
+      <div class="cls muted" id="fit-notes-saved" style="margin-top:4px">Saved automatically.</div></div>`;
+    if (t === 'engage') {
+      const order = { engage: 0, careful: 1, avoid: 2 };
+      const rows = eng.map((e, i) => ({ e, i })).sort((a, b) => order[a.e.v] - order[b.e.v] || Names.typeName(a.e.ship).localeCompare(Names.typeName(b.e.ship)));
+      return `<div class="drill fit-detail">${tabs}
+        <div class="row" style="margin-bottom:8px">
+          <input id="eng-ship" type="text" list="pop-ships" placeholder="Ship (e.g. Atron)" style="width:150px" autocomplete="off">
+          <span class="seg" id="eng-verdict">${Object.entries(this.VERDICT).map(([k, [ic, lbl]], i) => `<button data-v="${k}" class="${i === 0 ? 'on' : ''}" title="${lbl}">${ic} ${lbl}</button>`).join('')}</span>
+          <input id="eng-note" type="text" placeholder="note (optional)" class="grow" style="min-width:120px">
+          <button class="btn sm green" id="eng-add">+ Add</button></div>
+        ${rows.length ? rows.map(({ e, i }) => { const [ic, lbl, col] = this.VERDICT[e.v] || this.VERDICT.careful; return `<div class="eng-row"><img src="${typeIcon(e.ship)}" alt="" loading="lazy">
+          <div class="grow"><div>${esc(Names.typeName(e.ship))} <span class="muted" style="font-size:11px">${esc(Names.typeClass(e.ship))}</span></div>${e.n ? `<div class="cls muted">${esc(e.n)}</div>` : ''}</div>
+          <button class="chip ${col}" data-engcycle="${i}" title="Tap to change">${ic} ${lbl}</button><button class="btn sm ghost" data-engdel="${i}" title="Remove">✕</button></div>`; }).join('')
+          : '<div class="empty">No ships yet. Add the hulls this fit should take on (or stay away from).</div>'}</div>`;
+    }
+    return `<div class="drill fit-detail"><div class="throw-grip" title="Swipe up or tap to throw this fit to your PC">⇧ swipe up or tap — throw to PC</div>${tabs}${f.notes ? `<div class="muted" style="margin-bottom:6px">📝 ${esc(f.notes.length > 140 ? f.notes.slice(0, 140) + '…' : f.notes)}</div>` : ''}${secs}
       <div class="row" style="margin-top:10px">
         <button class="btn sm" data-act="copy">⧉ Copy fit</button>
         <button class="btn sm" data-act="pc">🖥 Send to PC</button>
+        <button class="btn sm ghost" data-act="export">⇩ Export…</button>
         <button class="btn sm ghost" data-act="edit">✎ Edit</button>
         ${f.src?.km ? `<button class="btn sm ghost" data-act="km">☠ Killmail</button>` : ''}
         <span class="grow"></span><button class="btn sm red" data-act="del">Delete</button></div>
       <div class="cls" style="margin-top:6px">Saved ${fmtDate(f.created)}${f.modified && f.modified !== f.created ? ' · edited ' + fmtDate(f.modified) : ''}</div></div>`;
   },
 
+  ensureShipList() {
+    if (!$('#pop-ships').children.length) $('#pop-ships').innerHTML = Object.values(SDE.ships).map(s => s[0]).sort().map(n => `<option value="${esc(n)}">`).join('');
+  },
+  addEngage(fid) {
+    const ship = this.shipByName($('#eng-ship').value);
+    if (!ship) { flash('Pick a ship from the list.', true); $('#eng-ship').focus(); return; }
+    const d = this.data(), f = d.fits.find(x => x.id === fid); if (!f) return;
+    const v = $('#eng-verdict .on')?.dataset.v || 'engage', n = $('#eng-note').value.trim();
+    const ex = f.engage.find(x => x.ship === ship);
+    if (ex) { ex.v = v; if (n) ex.n = n; } else f.engage.push({ ship, v, n });
+    f.modified = Date.now(); this.save(d); this.render();
+    setTimeout(() => $('#eng-ship')?.focus(), 0);
+  },
+  // spreadsheet form: "Atron [engage] kite it; Rifter [avoid]"
+  engageText(f) { return (f.engage || []).map(e => `${Names.typeName(e.ship)} [${e.v}]${e.n ? ' ' + e.n : ''}`).join('; '); },
+  parseEngage(txt) {
+    return (txt || '').split(';').map(x => x.trim()).filter(Boolean).map(x => {
+      const m = x.match(/^(.+?)\s*\[(engage|careful|avoid)\]\s*(.*)$/i);
+      const ship = this.shipByName(m ? m[1] : x);
+      return ship ? { ship, v: m ? m[2].toLowerCase() : 'engage', n: m ? m[3].trim() : '' } : null;
+    }).filter(Boolean);
+  },
+
+  // ── Import pool: mass-imported fits waiting for review (kept apart from saved fits) ──
+  view: 'saved', poolSel: new Set(), poolOpen: null, poolEditing: null,
+  pool() { const d = LS.get(KEYS.fitsInbox, null); return d && Array.isArray(d.fits) ? d : { schema: 1, fits: [] }; },
+  savePool(d) { LS.set(KEYS.fitsInbox, d); },
+  fitKey(ship, eft) { return (ship || 0) + '|' + this.bodyKey(eft); },
+  setView(v) {
+    this.view = v;
+    $$('#fit-view button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    $('#fit-saved-pane').style.display = v === 'saved' ? '' : 'none';
+    $('#fit-pool-pane').style.display = v === 'pool' ? '' : 'none';
+    v === 'pool' ? this.renderPool() : this.render();
+  },
+  counts() {
+    $('#fit-view [data-v=saved]').textContent = `Saved (${this.data().fits.length})`;
+    $('#fit-view [data-v=pool]').textContent = `Import pool (${this.pool().fits.length})`;
+  },
+  async importToPool(files, pasted) {
+    const incoming = [], bad = [];
+    for (const f of files) {
+      const t = (await f.text()).replace(/^﻿/, ''), src = f.name.replace(/\.(xml|txt)$/i, '');
+      try {
+        if (/^\s*</.test(t)) for (const x of FMT.fromXML(t)) incoming.push({ ...x, src });
+        else for (const eft of this.splitEFT(t)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '', src });
+      } catch (e) { bad.push(`${f.name}: ${e.message}`); }
+    }
+    if (pasted?.trim()) for (const eft of this.splitEFT(pasted)) incoming.push({ eft, name: this.parseEFT(eft)?.fitName, notes: '', src: 'pasted' });
+    const saved = new Set(this.data().fits.map(f => this.fitKey(f.ship, f.eft)));
+    const pd = this.pool(), inPool = new Set(pd.fits.map(f => this.fitKey(f.ship, f.eft)));
+    let added = 0, dupSaved = 0, dupPool = 0;
+    const now = Date.now();
+    for (const x of incoming) {
+      const p = this.parseEFT(x.eft); if (!p) continue;
+      const k = this.fitKey(p.ship, x.eft);
+      if (saved.has(k)) { dupSaved++; continue; }
+      if (inPool.has(k)) { dupPool++; continue; }
+      inPool.add(k);
+      pd.fits.push({ id: this.uid('i'), name: (x.name || p.fitName || p.shipName).trim(), ship: p.ship, eft: x.eft, notes: x.notes || '', src: x.src, added: now + added });
+      added++;
+    }
+    this.savePool(pd);
+    this.setView('pool');
+    const dup = dupSaved + dupPool;
+    flash(`Added ${added} fit${added === 1 ? '' : 's'} to the import pool${dup ? ` · skipped ${dup} duplicate${dup === 1 ? '' : 's'}${dupSaved ? ` (${dupSaved} already saved)` : ''}` : ''}${bad.length ? ` · ⚠ ${bad.join('; ')}` : ''}.`, !added && !dup);
+    return { added, dupSaved, dupPool, bad };
+  },
+  poolShown() {
+    const q = $('#pool-search').value.trim().toLowerCase();
+    let list = this.pool().fits;
+    if (q) list = list.filter(f => (f.name + '\n' + (f.ship ? Names.typeName(f.ship) + '\n' + Names.typeClass(f.ship) : '') + '\n' + (f.src || '') + '\n' + f.eft).toLowerCase().includes(q));
+    return list.slice().sort((a, b) => (Names.typeClass(a.ship) || 'zz').localeCompare(Names.typeClass(b.ship) || 'zz') || Names.typeName(a.ship).localeCompare(Names.typeName(b.ship)) || a.name.localeCompare(b.name));
+  },
+  renderPool() {
+    this.counts();
+    const all = this.pool().fits, list = this.poolShown();
+    for (const id of [...this.poolSel]) if (!all.some(f => f.id === id)) this.poolSel.delete(id);
+    const n = this.poolSel.size;
+    $('#pool-move').textContent = `✓ Move to saved${n ? ` (${n})` : ''}`; $('#pool-discard').textContent = `🗑 Discard${n ? ` (${n})` : ''}`; $('#pool-export').textContent = `⇩ Export${n ? ` (${n})` : ''}`;
+    ['#pool-move', '#pool-discard', '#pool-export'].forEach(s => $(s).disabled = !n);
+    $('#pool-all').textContent = list.length && list.every(f => this.poolSel.has(f.id)) ? '☐ None' : '☑ All shown';
+    $('#pool-sum').textContent = `${list.length} of ${all.length}`;
+    if (!all.length) { $('#pool-list').innerHTML = '<div class="sso-info">The import pool is empty. Tap <b>⇪ Import fits…</b> and choose the .xml files EVE exports (Fitting window → Fitting Management → Export to file — one file per character, pick them all at once), or paste many EFT fits. They wait here, apart from your saved fits, until you review them.</div>'; return; }
+    let lastCls = null;
+    $('#pool-list').innerHTML = list.map(f => {
+      const cls = Names.typeClass(f.ship) || 'Unknown';
+      const hdr = cls !== lastCls ? `<div class="group-hdr"><span>${esc(cls)}</span><span>${list.filter(x => (Names.typeClass(x.ship) || 'Unknown') === cls).length}</span></div>` : '';
+      lastCls = cls;
+      const open = this.poolOpen === f.id;
+      return hdr + `<div class="fit-card${open ? ' open' : ''}" data-pid="${f.id}"><input type="checkbox" class="pool-cb" data-sel="${f.id}" ${this.poolSel.has(f.id) ? 'checked' : ''}>
+        <img src="${typeIcon(f.ship || 0, 64)}" alt="" loading="lazy">
+        <div class="grow"><div class="nm">${esc(f.name)}</div><div class="cls">${esc(f.ship ? Names.typeName(f.ship) : 'Unknown ship')}${f.src ? ' · from ' + esc(f.src) : ''}</div></div></div>`
+        + (open ? this.poolDetail(f) : '');
+    }).join('') || '<div class="empty">No fits match.</div>';
+  },
+  poolDetail(f) {
+    const p = this.parseEFT(f.eft);
+    const secs = p ? p.sections.filter(([, s]) => s.length).map(([lbl, s]) => `<div class="slot-hdr">${lbl}</div>${s.map(l => `<div class="fl">${esc(l)}</div>`).join('')}`).join('') : '<div class="empty">Fit text could not be read.</div>';
+    return `<div class="drill fit-detail">${f.notes ? `<div class="muted" style="margin-bottom:6px;white-space:pre-wrap">📝 ${esc(f.notes)}</div>` : ''}${secs}
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm green" data-pact="move">✓ Move to saved</button>
+        <button class="btn sm ghost" data-pact="edit">✎ Edit, then save</button>
+        <button class="btn sm ghost" data-pact="copy">⧉ Copy</button>
+        <button class="btn sm ghost" data-pact="pc">🖥</button>
+        <button class="btn sm ghost" data-pact="export">⇩ Export…</button>
+        <span class="grow"></span><button class="btn sm red" data-pact="discard">🗑 Discard</button></div></div>`;
+  },
+  moveToSaved(ids) {
+    const pd = this.pool(), d = this.data(), now = Date.now();
+    const moving = pd.fits.filter(f => ids.includes(f.id));
+    moving.forEach((f, i) => d.fits.push({ id: this.uid('f'), name: f.name, ship: f.ship, eft: f.eft, tags: [], fav: false, notes: f.notes || '', engage: [], from: f.src, created: now + i, modified: now + i }));
+    pd.fits = pd.fits.filter(f => !ids.includes(f.id));
+    this.save(d); this.savePool(pd);
+    ids.forEach(id => this.poolSel.delete(id));
+    if (ids.includes(this.poolOpen)) this.poolOpen = null;
+    flash(`Moved ${moving.length} fit${moving.length === 1 ? '' : 's'} to Saved.`);
+    this.renderPool();
+  },
+  discard(ids) {
+    const pd = this.pool(); pd.fits = pd.fits.filter(f => !ids.includes(f.id)); this.savePool(pd);
+    ids.forEach(id => this.poolSel.delete(id)); if (ids.includes(this.poolOpen)) this.poolOpen = null;
+    this.renderPool();
+  },
+  exportItems(fits) {
+    const d = this.data();
+    return fits.map(f => ({ name: f.name, eft: f.eft, notes: f.notes || '', engage: f.engage || [], tags: (f.tags || []).map(id => this.tag(d, id)?.name).filter(Boolean) }));
+  },
+  wirePool() {
+    $('#fit-view').onclick = e => { const b = e.target.closest('button'); if (b) this.setView(b.dataset.v); };
+    $('#pool-import').onclick = () => { $('#pool-files').value = ''; $('#pool-text').value = ''; $('#pool-dlg').showModal(); };
+    $('#pool-cancel').onclick = () => $('#pool-dlg').close();
+    $('#pool-go').onclick = async () => {
+      const files = [...$('#pool-files').files], text = $('#pool-text').value;
+      if (!files.length && !text.trim()) { flash('Choose files or paste fits first.', true); return; }
+      $('#pool-dlg').close();
+      try { await this.importToPool(files, text); } catch (e) { flash('Import failed: ' + e.message, true); }
+    };
+    $('#pool-search').oninput = () => this.renderPool();
+    $('#pool-all').onclick = () => {
+      const list = this.poolShown(), all = list.every(f => this.poolSel.has(f.id));
+      list.forEach(f => all ? this.poolSel.delete(f.id) : this.poolSel.add(f.id)); this.renderPool();
+    };
+    $('#pool-move').onclick = () => this.moveToSaved([...this.poolSel]);
+    $('#pool-discard').onclick = () => { const n = this.poolSel.size; if (n && confirm(`Discard ${n} fit${n > 1 ? 's' : ''} from the import pool?`)) this.discard([...this.poolSel]); };
+    $('#pool-export').onclick = () => EXP.open(this.exportItems(this.pool().fits.filter(f => this.poolSel.has(f.id))));
+    $('#pool-list').onclick = e => {
+      const cb = e.target.closest('[data-sel]');
+      if (cb) { cb.checked ? this.poolSel.add(cb.dataset.sel) : this.poolSel.delete(cb.dataset.sel); this.renderPool(); return; }
+      const a = e.target.closest('[data-pact]');
+      if (a) {
+        const f = this.pool().fits.find(x => x.id === this.poolOpen); if (!f) return;
+        const act = a.dataset.pact;
+        if (act === 'move') this.moveToSaved([f.id]);
+        if (act === 'discard') this.discard([f.id]);
+        if (act === 'copy') navigator.clipboard.writeText(f.eft).then(() => flash('Fit copied.'), () => flash('Clipboard blocked by the browser.', true));
+        if (act === 'pc') PCL.sendFit(f.name, f.eft);
+        if (act === 'export') EXP.open(this.exportItems([f]));
+        if (act === 'edit') this.openEditor({ eft: f.eft, name: f.name, notes: f.notes, poolId: f.id });
+        return;
+      }
+      if (e.target.closest('.fit-detail')) return;
+      const card = e.target.closest('[data-pid]');
+      if (card) { this.poolOpen = this.poolOpen === card.dataset.pid ? null : card.dataset.pid; this.renderPool(); }
+    };
+    $('#fit-export-all').onclick = () => {
+      const d = this.data(), q = $('#fit-search').value.trim().toLowerCase();
+      let list = d.fits.filter(f => (!this.favOnly || f.fav) && [...this.filter].every(t => f.tags.includes(t)));
+      if (q) list = list.filter(f => (f.name + '\n' + (Names.typeName(f.ship) || '') + '\n' + (f.notes || '') + '\n' + f.eft).toLowerCase().includes(q));
+      EXP.open(this.exportItems(list), `${list.length} fit${list.length === 1 ? '' : 's'}${this.filter.size || this.favOnly || q ? ' (current filter)' : ''}`);
+    };
+  },
+
   // ── editor dialog ──
-  openEditor({ id = null, eft = '', name = '', src = null } = {}) {
+  openEditor({ id = null, eft = '', name = '', src = null, notes = '', poolId = null } = {}) {
+    this.poolEditing = poolId;
     const d = this.data(), f = id ? d.fits.find(x => x.id === id) : null;
     this.editId = id; this.draft = { src: f?.src || src, tags: new Set(f?.tags || []), fav: !!f?.fav };
     $('#fit-dlg-title').textContent = f ? 'Edit fit' : 'Save fit';
     $('#fit-eft').value = f?.eft || eft;
     const p = this.parseEFT(this.splitEFT($('#fit-eft').value)[0] || '');
     $('#fit-name').value = f?.name || name || p?.fitName || (p ? p.shipName : '');
-    $('#fit-notes').value = f?.notes || '';
+    $('#fit-notes').value = f?.notes || notes || '';
     $('#fit-fav').checked = this.draft.fav;
     $('#fit-multi').textContent = '';
     this.renderEditorTags(); this.updateEditorShip();
@@ -2951,10 +3378,12 @@ const FITS = {
         d.fits.push(f); this.open = f.id; added++;
       });
       this.save(d);
-      flash(`${added ? `Saved ${added} fit${added > 1 ? 's' : ''}.` : ''}${dupes.length ? ` Already saved: ${dupes.slice(0, 3).join(', ')}.` : ''}`, !added);
+      if (this.poolEditing && added) { const pd = this.pool(); pd.fits = pd.fits.filter(x => x.id !== this.poolEditing); this.savePool(pd); this.poolSel.delete(this.poolEditing); this.poolOpen = null; }
+      flash(`${added ? `Saved ${added} fit${added > 1 ? 's' : ''}${this.poolEditing ? ' — removed from the import pool' : ''}.` : ''}${dupes.length ? ` Already saved: ${dupes.slice(0, 3).join(', ')}.` : ''}`, !added);
     }
     $('#fit-dlg').close();
-    if (UI.page === 'fits') this.render();
+    if (UI.page === 'fits') this.view === 'pool' ? this.renderPool() : this.render();
+    this.poolEditing = null;
   },
 
   // ── tags dialog ──
@@ -2972,8 +3401,8 @@ const FITS = {
     const hdr = cols => cols.map(v => ({ v, bold: true }));
     const tagNames = f => f.tags.map(id => this.tag(d, id)?.name).filter(Boolean).join('; ');
     return [
-      { name: 'Fits', widths: [28, 18, 22, 9, 30, 60, 22], rows: [hdr(['Name', 'Ship', 'Tags', 'Favorite', 'Notes', 'Fit (EFT)', 'Killmail']),
-        ...d.fits.map(f => [{ v: f.name, bold: true, fill: this.tag(d, f.tags[0])?.color }, f.ship ? Names.typeName(f.ship) : '', tagNames(f), f.fav ? 'Yes' : 'No', f.notes || '', f.eft, f.src?.km ? `${f.src.km}:${f.src.hash || ''}` : ''])],
+      { name: 'Fits', widths: [28, 18, 22, 9, 30, 60, 22, 40], rows: [hdr(['Name', 'Ship', 'Tags', 'Favorite', 'Notes', 'Fit (EFT)', 'Killmail', 'Engagements']),
+        ...d.fits.map(f => [{ v: f.name, bold: true, fill: this.tag(d, f.tags[0])?.color }, f.ship ? Names.typeName(f.ship) : '', tagNames(f), f.fav ? 'Yes' : 'No', f.notes || '', f.eft, f.src?.km ? `${f.src.km}:${f.src.hash || ''}` : '', this.engageText(f)])],
         validations: [{ col: 3, list: ['Yes', 'No'] }] },
       { name: 'Tags', widths: [20, 11], rows: [hdr(['Tag', 'Color']), ...d.tags.map(t => [{ v: t.name, fill: t.color, bold: true }, { v: t.color, fill: t.color }])] },
       { name: 'Read Me', widths: [16, 90], frozen: false, rows: [
@@ -2982,6 +3411,7 @@ const FITS = {
         ['Tags', 'Separated by ;  — tags that don\'t exist are created.'],
         ['Favorite', 'Yes / No'],
         ['Killmail', 'Optional link back to the killmail it came from (id:hash). Leave as is.'],
+        ['Engagements', 'Ships this fit should fight or avoid, separated by ;  e.g.  Atron [engage] kite at 20km; Rifter [avoid]   (engage / careful / avoid)'],
         ['Import', 'Fits with the same name and ship are updated; others are added.']] },
     ];
   },
@@ -3009,6 +3439,8 @@ const FITS = {
       const km = (r.killmail || '').trim().match(/^(\d+):(\w+)$/);
       Object.assign(f, { name, ship: p?.ship || null, eft, tags, fav: /^(y|yes|true|1|x)$/i.test(r.favorite || ''), notes: (r.notes || '').trim(), modified: now });
       if (km) f.src = { km: +km[1], hash: km[2] };
+      if ('engagements' in r) f.engage = this.parseEngage(r.engagements);
+      f.engage ||= [];
       this.save(d);
     }
     this.render();
@@ -3026,6 +3458,17 @@ const FITS = {
     $('#fit-list').onclick = async e => {
       const fav = e.target.closest('[data-favtoggle]');
       const d = this.data();
+      const cur = d.fits.find(x => x.id === this.open);
+      const ft = e.target.closest('[data-ftab]');
+      if (ft) { this.tab = ft.dataset.ftab; this.render(); if (this.tab === 'engage') this.ensureShipList(); return; }
+      const vb = e.target.closest('#eng-verdict button');
+      if (vb) { $$('#eng-verdict button').forEach(b => b.classList.toggle('on', b === vb)); return; }
+      if (e.target.id === 'eng-add' && cur) { this.addEngage(cur.id); return; }
+      const cyc = e.target.closest('[data-engcycle]');
+      if (cyc && cur) { const k = Object.keys(this.VERDICT), en = cur.engage[+cyc.dataset.engcycle]; en.v = k[(k.indexOf(en.v) + 1) % k.length]; cur.modified = Date.now(); this.save(d); this.render(); return; }
+      const del = e.target.closest('[data-engdel]');
+      if (del && cur) { cur.engage.splice(+del.dataset.engdel, 1); cur.modified = Date.now(); this.save(d); this.render(); return; }
+      if (e.target.closest('.fit-detail') && !e.target.closest('[data-act]')) return; // typing/tapping inside the open fit doesn't collapse it
       if (fav) { const f = d.fits.find(x => x.id === fav.dataset.favtoggle); f.fav = !f.fav; this.save(d); this.render(); return; }
       const act = e.target.closest('[data-act]');
       if (act) {
@@ -3033,13 +3476,26 @@ const FITS = {
         if (act.dataset.act === 'pc') PCL.sendFit(f.name, f.eft);
         if (act.dataset.act === 'copy') navigator.clipboard.writeText(f.eft).then(() => flash('Fit copied — paste into Pyfa or the in-game fitting window (Import from clipboard).'), () => flash('Clipboard blocked by the browser.', true));
         if (act.dataset.act === 'edit') this.openEditor({ id: f.id });
+        if (act.dataset.act === 'export') EXP.open(this.exportItems([f]));
         if (act.dataset.act === 'km') KMV.show(f.src.km, f.src.hash);
         if (act.dataset.act === 'del' && confirm(`Delete fit "${f.name}"?`)) { d.fits = d.fits.filter(x => x !== f); this.save(d); this.open = null; this.render(); }
         return;
       }
       const card = e.target.closest('[data-fid]');
-      if (card) { this.open = this.open === card.dataset.fid ? null : card.dataset.fid; this.render(); }
+      if (card) { this.open = this.open === card.dataset.fid ? null : card.dataset.fid; this.tab = 'fit'; this.render(); }
     };
+    let nt;
+    $('#fit-list').addEventListener('input', e => {
+      if (e.target.id !== 'fit-notes-area') return;
+      clearTimeout(nt); $('#fit-notes-saved').textContent = 'Saving…';
+      nt = setTimeout(() => {
+        const d = this.data(), f = d.fits.find(x => x.id === this.open); if (!f) return;
+        f.notes = e.target.value; f.modified = Date.now(); this.save(d);
+        const s = $('#fit-notes-saved'); if (s) s.textContent = 'Saved.';
+      }, 400);
+    });
+    $('#fit-list').addEventListener('keydown', e => { if ((e.target.id === 'eng-ship' || e.target.id === 'eng-note') && e.key === 'Enter') { e.preventDefault(); this.addEngage(this.open); } });
+    this.wirePool();
     $('#fit-paste').onclick = () => this.openEditor();
     $('#fit-thrown-refresh').onclick = () => this.loadThrown(true);
     $('#fit-thrown-clear').onclick = () => this.hideThrown(true);
@@ -3762,7 +4218,7 @@ const CS = {
 //  BACKUP — what moves between devices (never logins, never the PC link code)
 // ════════════════════════════════════════════════════════════════
 const BACKUP = {
-  KEYS: ['settings', 'tracked', 'kbSelected', 'plans', 'activePlan', 'ui', 'charsets', 'fits', 'skillChar'],
+  KEYS: ['settings', 'tracked', 'kbSelected', 'plans', 'activePlan', 'ui', 'charsets', 'fits', 'fitsInbox', 'skillChar'],
   // logins: only for the encrypted device-to-device sync, never in downloaded files
   collect({ logins = false } = {}) {
     const data = {}; for (const k of this.KEYS) { const v = LS.get(KEYS[k], undefined); if (v !== undefined) data[KEYS[k]] = v; }
@@ -3786,7 +4242,8 @@ const BACKUP = {
   summary(data) {
     const n = (k, f) => { try { return f(data[KEYS[k]]) || 0; } catch { return 0; } };
     const logins = n('ssoChars', d => Object.keys(d).length);
-    return `${n('plans', d => d.plans.length)} plans, ${n('fits', d => d.fits.length)} fits, ${n('charsets', d => d.chars.length)} characters, ${n('tracked', d => d.filter(t => t.star).length)} tracked pilots${logins ? `, ${logins} EVE login${logins > 1 ? 's' : ''}` : ''}`;
+    const pool = n('fitsInbox', d => d.fits.length);
+    return `${n('plans', d => d.plans.length)} plans, ${n('fits', d => d.fits.length)} fits${pool ? ` (+${pool} in the import pool)` : ''}, ${n('charsets', d => d.chars.length)} characters, ${n('tracked', d => d.filter(t => t.star).length)} tracked pilots${logins ? `, ${logins} EVE login${logins > 1 ? 's' : ''}` : ''}`;
   },
 };
 
@@ -3807,7 +4264,7 @@ const UI = {
     if (page === 'skills') Skills.render();
     else if (page === 'plans') Plans.renderAll();
     else if (page === 'charsets') CS.render();
-    else if (page === 'fits') FITS.render();
+    else if (page === 'fits') FITS.setView(FITS.view);
     else KB.renderAll();
   },
   setShipsMode(v) { $$('#ships-mode button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); },
@@ -4007,6 +4464,7 @@ function wire() {
 
   CS.wire();
   INF.wire();
+  EXP.wire();
   PCL.wire();
   // backup / restore
   { const ui = LS.get(KEYS.ui, {}); if (ui.syncLogins === false) $('#bk-logins').checked = false; }
