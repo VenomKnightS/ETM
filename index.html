@@ -289,7 +289,7 @@
   <span class="logo">⚡ EVE TILES</span>
   <div id="tabs">
     <button class="tab-btn" data-page="kb">☠ Killboard</button>
-    <button class="tab-btn" data-page="ships">🚀 Ships</button>
+    <button class="tab-btn" data-page="ships">⚔ Matchups</button>
     <button class="tab-btn" data-page="habits">🕐 Habits</button>
     <button class="tab-btn" data-page="skills">📚 Skills</button>
     <button class="tab-btn" data-page="plans">🗺 Plans</button>
@@ -353,7 +353,7 @@
 <!-- ══════════ SHIPS ══════════ -->
 <div id="page-ships" class="page">
   <div class="card">
-    <div class="label-row"><span class="title">Ships</span><span class="sub" id="ships-sum"></span></div>
+    <div class="label-row"><span class="title">Matchups — what killed what</span><span class="sub" id="ships-sum"></span></div>
     <div class="filter-row"><span class="seg" id="ships-mode"><button data-v="killed" class="on">Ships killed</button><button data-v="kills">Kills with</button><button data-v="deaths">Deaths in</button></span></div>
     <div class="filter-row">
       <select class="f-period"><option value="0">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
@@ -724,7 +724,7 @@
   <div id="kml-body" style="padding:6px 12px 12px"></div>
 </dialog>
 <dialog id="inf-dlg">
-  <div class="km-top"><span class="card-title" style="margin:0" id="inf-title">Popular fits</span><span class="grow"></span><button class="btn sm ghost" id="inf-close">✕ Close</button></div>
+  <div class="km-top"><span class="card-title" style="margin:0" id="inf-title">Popular fits</span><span class="grow"></span><a class="btn sm ghost" id="inf-zk" target="_blank" rel="noopener">zKill inferred ↗</a><button class="btn sm ghost" id="inf-close">✕ Close</button></div>
   <div id="inf-body" style="padding:12px 14px"></div>
 </dialog>
 <dialog id="km-dlg">
@@ -1486,10 +1486,11 @@ const KB = {
     if (!id) return;
     const c = this.current();
     const info = this.info.get(id) || {};
+    $('#kb-header').style.flexWrap = id < 0 ? 'wrap' : '';
     if (id < 0) {
       $('#kb-header').innerHTML = `<img class="char-portrait" src="${typeIcon(-id, 128)}" alt="">
         <div class="grow"><div class="char-name">${esc(Names.typeName(-id))}</div><div class="char-corp">${esc(Names.typeClass(-id))} · every pilot flying it, newest first</div></div>
-        <div class="row" style="gap:6px;justify-content:flex-end"><button class="btn sm ghost" data-subfits="flown|${-id}">🧩 Fits seen</button><button class="btn sm ghost" data-inf="${-id}">🛠 Popular fits</button></div>`;
+        <div class="row" style="gap:6px;flex-basis:100%"><button class="btn sm ghost" data-subfits="flown|${-id}">🧩 Fits seen</button><button class="btn sm ghost" data-inf="${-id}">🛠 Popular fits</button><a class="btn sm ghost" href="https://zkillboard.com/fits/${-id}/" target="_blank" rel="noopener">zKill inferred fits ↗</a></div>`;
       $('#kb-zk-link').innerHTML = `<a href="https://zkillboard.com/ship/${-id}/" target="_blank" rel="noopener">Open on zKillboard ↗</a>`;
     } else
     $('#kb-header').innerHTML = `<img class="char-portrait" src="${portrait(id)}" alt="">
@@ -1625,7 +1626,7 @@ const KB = {
     rows.sort((a, b) => b.n - a.n || b.isk - a.isk);
     const max = Math.max(1, ...rows.map(x => x.n));
     const color = mode === 'deaths' ? 'red' : 'green';
-    const fitsBtn = t => `<button class="btn sm ghost" data-inf="${t}" style="margin-top:8px">🛠 Popular fits for ${esc(Names.typeName(t))}</button>`;
+    const fitsBtn = t => `<button class="btn sm ghost" data-inf="${t}" style="margin-top:8px">🛠 Popular fits for ${esc(Names.typeName(t))}</button><a class="btn sm ghost" href="https://zkillboard.com/fits/${t}/" target="_blank" rel="noopener" style="margin-top:8px">zKill inferred fits ↗</a>`;
     const rowHTML = x => {
       const open = this.open.ships === x.type;
       let sub = '';
@@ -2658,6 +2659,7 @@ const INF = {
   async show(ship) {
     const run = ++this.run, dlg = $('#inf-dlg');
     $('#inf-title').textContent = `Popular fits — ${Names.typeName(ship)}`;
+    $('#inf-zk').href = `https://zkillboard.com/fits/${ship}/`;
     $('#inf-body').innerHTML = '<div class="empty">Reading recent losses from zKillboard…</div>';
     if (!dlg.open) dlg.showModal();
     let res = this.cache.get(ship);
@@ -2733,6 +2735,7 @@ const INF = {
     const run = ++this.run, dlg = $('#inf-dlg');
     const who = KB.isShip() ? Names.typeName(KB.ship()) : (KB.current()?.name || 'This pilot');
     $('#inf-title').textContent = role === 'victims' ? `${Names.typeName(hull)} fits ${who} killed` : KB.isShip() ? `${Names.typeName(hull)} fits seen` : `${who}'s ${Names.typeName(hull)} fits`;
+    $('#inf-zk').href = `https://zkillboard.com/fits/${hull}/`;
     $('#inf-body').innerHTML = '<div class="empty">Gathering killmails…</div>';
     if (!dlg.open) dlg.showModal();
     const all = KB.mails(KB.filters('ships'));
