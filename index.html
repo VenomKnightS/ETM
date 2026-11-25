@@ -591,6 +591,13 @@
     <button class="btn ghost" id="set-close">Cancel</button><button class="btn green" id="set-join">Save</button>
   </div>
 </dialog>
+<dialog id="ai-dlg" style="max-width:680px">
+  <div class="km-top"><span class="card-title" style="margin:0" id="ai-title">Copy for AI</span><span class="grow"></span><button class="btn sm ghost" id="ai-close">✕</button></div>
+  <div class="cls muted" id="ai-info" style="margin:4px 0 6px"></div>
+  <div id="ai-opts" class="row" style="margin-bottom:6px"></div>
+  <textarea id="ai-text" rows="14" readonly style="width:100%;font-family:monospace;font-size:11px"></textarea>
+  <div class="row" style="margin-top:8px"><span class="grow"></span><button class="btn ghost" id="ai-dl">⇩ Download .txt</button><button class="btn green" id="ai-copy">📋 Copy</button></div>
+</dialog>
 <dialog id="exp-dlg" style="max-width:640px">
   <div class="card-title" id="exp-title">Export</div>
   <div id="exp-fmt" class="checks" style="margin-bottom:8px">
@@ -1404,7 +1411,7 @@ const INTEL = {
       ${!x.ids?.length ? '<div class="muted">No killmails on zKillboard.</div>' : !x.recentList ? '<div class="muted">Reading their newest killmails…</div>'
         : top.length ? KB.drillList(top, v => `<span class="green">${v.k}</span>/<span class="red">${v.l}</span>`) + '<div class="cls muted">kills / losses in that ship · capsules left out</div>' : '<div class="muted">Only capsule activity lately.</div>'}
       ${x.recentList && x.ids.length > x.recentN ? `<button class="btn sm ghost" data-intelmore="${r.id}" style="margin-top:4px">Look further back (${Math.min(50, x.ids.length)})</button>` : ''}
-      <div class="row" style="margin-top:8px"><button class="btn sm" data-intelkb="${r.id}">☠ Full killboard · Matchups · Habits</button><a class="btn sm ghost" href="https://zkillboard.com/character/${r.id}/" target="_blank" rel="noopener">zKillboard ↗</a></div></div>`;
+      <div class="row" style="margin-top:8px"><button class="btn sm" data-intelkb="${r.id}">☠ Full killboard · Matchups · Habits</button><button class="btn sm ghost" data-intelai="${r.id}">📋 Copy for AI</button><a class="btn sm ghost" href="https://zkillboard.com/character/${r.id}/" target="_blank" rel="noopener">zKillboard ↗</a></div></div>`;
   },
   renderDscan(p, from) {
     const by = new Map();
@@ -1467,6 +1474,8 @@ const INTEL = {
       if (lk) { const d = this.state(), r = d.rows[+lk.dataset.lock]; r.lock = !r.lock; this.save(d); this.render(); return; }
       const kb = e.target.closest('[data-intelkb]');
       if (kb) { const r = this.state().rows.find(x => x.id === +kb.dataset.intelkb); KB.ensure(r.id, r.name); KB.select(r.id); UI.show('kb'); return; }
+      const ai = e.target.closest('[data-intelai]');
+      if (ai) { const id = +ai.dataset.intelai; AIX.open(this.state().rows.find(x => x.id === id)?.name || 'pilot', async () => AIX.intelText(id)); return; }
       const more = e.target.closest('[data-intelmore]');
       if (more) { const r = this.state().rows.find(x => x.id === +more.dataset.intelmore); more.disabled = true; more.textContent = 'Reading…'; this.recent(r, 50); return; }
       const km = e.target.closest('[data-intelkm]');
@@ -1479,6 +1488,107 @@ const INTEL = {
     this.render();
     if (this.state().rows.some(r => !r.id || !this.info.get(r.id)?.at)) this.lookup();
     this.listen();
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  AIX — "📋 Copy for AI": the data on screen as plain labelled text to paste into Gemini (or any assistant)
+// ════════════════════════════════════════════════════════════════
+const AIX = {
+  build: null, opts: {},
+  async open(title, build, opts = null) {
+    this.build = build; this.opts = opts ? Object.fromEntries(opts.map(o => [o.id, o.on])) : {};
+    $('#ai-title').textContent = 'Copy for AI — ' + title;
+    $('#ai-opts').innerHTML = (opts || []).map(o => `<label style="font-size:12px"><input type="checkbox" data-aiopt="${o.id}" ${o.on ? 'checked' : ''}> ${esc(o.label)}</label>`).join('');
+    $('#ai-dlg').showModal(); await this.refresh();
+  },
+  async refresh() {
+    $('#ai-text').value = 'Preparing…'; $('#ai-info').textContent = '';
+    const t = await this.build(this.opts);
+    $('#ai-text').value = t;
+    const kb = Math.round(t.length / 1024);
+    $('#ai-info').textContent = `${fmtNum(t.split('\n').length)} lines · ${kb} KB` + (kb > 200 ? ' — big: Download the .txt and attach it in Gemini instead of pasting' : ' — paste it into Gemini, then ask your question');
+  },
+  wire() {
+    $('#ai-close').onclick = () => $('#ai-dlg').close();
+    $('#ai-opts').onchange = e => { const c = e.target.closest('[data-aiopt]'); if (c) { this.opts[c.dataset.aiopt] = c.checked; this.refresh(); } };
+    $('#ai-copy').onclick = async () => {
+      try { await navigator.clipboard.writeText($('#ai-text').value); flash('Copied — paste it into Gemini'); }
+      catch { $('#ai-text').select(); document.execCommand('copy'); flash('Copied'); }
+    };
+    $('#ai-dl').onclick = () => Plans.download(($('#ai-title').textContent.replace(/^Copy for AI — /, '') || 'eve-data').replace(/[\\/:*?"<>|]+/g, '_') + '.txt', $('#ai-text').value, 'text/plain');
+  },
+  // ── killboard history of the pilot or ship being looked at ──
+  async kbHistory(o) {
+    const ship = KB.isShip(), me = KB.charId, who = ship ? Names.typeName(KB.ship()) : (KB.current()?.name || 'pilot');
+    const all = KB.mails({ days: 0 }).sort((a, b) => b.km.t - a.km.t);
+    const need = new Set();
+    for (const { km } of all) { need.add(km.v[3]); need.add(km.sys); for (const a of km.a) { need.add(a[1]); if (a[5]) need.add(a[5]); } }
+    await Names.load([...need].filter(Boolean));
+    const T = id => Names.typeName(id) || String(id);
+    const kills = all.filter(m => m.kind === 'kill'), losses = all.filter(m => m.kind === 'loss');
+    const top = (mp, n = 8) => [...mp].sort((a, b) => b[1] - a[1]).slice(0, n);
+    const inc = (mp, k, by = 1) => mp.set(k, (mp.get(k) || 0) + by);
+    const flown = new Map(), killed = new Map(), diedTo = new Map(), hours = new Map(), sys = new Map(), weps = new Map();
+    for (const m of all) {
+      const mine = KB.myShipOn(m.km); if (!CAPSULES.has(mine)) inc(flown, T(mine) + (m.kind === 'kill' ? ' (kills)' : ' (losses)'));
+      inc(hours, new Date(m.km.t).getUTCHours()); inc(sys, Names.name(m.km.sys) || m.km.sys);
+      if (m.kind === 'kill') { inc(killed, T(m.km.v[3])); for (const a of m.km.a) if ((ship ? a[1] === KB.ship() : a[0] === me) && a[5] && a[5] !== a[1]) inc(weps, T(a[5])); }
+      else for (const t of new Set(m.km.a.filter(a => KB.isPlayer(a)).map(a => a[1]))) inc(diedTo, T(t));
+    }
+    const L = [];
+    L.push(`EVE Online killboard history — ${who} (${ship ? 'ship type: every pilot flying it' : 'pilot'})`);
+    L.push(`Exported from EVE Tiles Mobile on ${fmtDate(Date.now())}. Killmails from zKillboard/EVE ESI that this app downloaded: ${all.length} (${kills.length} kills, ${losses.length} losses)` + (all.length ? `, ${fmtDate(all[all.length - 1].km.t)} to ${fmtDate(all[0].km.t)}` : '') + '.');
+    L.push('Times are EVE time (UTC). "NPC" means an NPC attacker (no pilot). ISK values are zKillboard estimates.');
+    L.push('');
+    L.push('SUMMARY');
+    L.push(`- Ships used: ${top(flown, 12).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}`);
+    L.push(`- Ship types killed most: ${top(killed).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}`);
+    L.push(`- Ship types on its losses most (players only): ${top(diedTo).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}`);
+    L.push(`- Weapons used on kills: ${top(weps).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}`);
+    L.push(`- Busiest hours (EVE time): ${top(hours, 6).map(([k, v]) => `${String(k).padStart(2, '0')}:00 ${v}`).join(', ') || '—'}`);
+    L.push(`- Top systems: ${top(sys, 8).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}`);
+    L.push(`- Solo: ${all.filter(m => m.solo && m.kind === 'kill').length} solo kills, ${all.filter(m => m.solo && m.kind === 'loss').length} solo losses`);
+    if (o.rows !== false) {
+      L.push('');
+      L.push('EVERY KILLMAIL (newest first)');
+      L.push('date | K=kill L=loss | ship used | victim ship | system | attackers (players/total) | ships on the mail | weapon used | ISK | solo | killmail');
+      for (const m of all) {
+        const km = m.km, mine = KB.myShipOn(km), me1 = km.a.find(a => ship ? a[1] === KB.ship() : a[0] === me);
+        const hulls = new Map(); for (const a of km.a) inc(hulls, T(a[1]) + (a[0] ? '' : ' NPC'));
+        L.push([fmtDateTime(km.t), m.kind === 'kill' ? 'K' : 'L', T(mine), T(km.v[3]), Names.name(km.sys) || km.sys,
+          `${km.a.filter(a => a[0]).length}/${km.a.length}`, top(hulls, 6).map(([k, v]) => v > 1 ? `${k}×${v}` : k).join(', '),
+          m.kind === 'kill' && me1?.[5] && me1[5] !== me1[1] ? T(me1[5]) : '', m.value ? fmtISK(m.value) : '', m.solo ? 'solo' : '', `zkillboard.com/kill/${km.id}/`].join(' | '));
+      }
+    }
+    return L.join('\n');
+  },
+  // ── Head to head table as shown (source, filters, sort) ──
+  h2hText() {
+    const x = KB.lastH2H; if (!x) return 'Nothing to copy yet.';
+    const { D, rows, who, sortBy, f } = x, L = [];
+    const pct = r => r.w + r.l ? Math.round(r.w / (r.w + r.l) * 100) : 0;
+    const wl = mp => [...(mp || new Map())].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([w, n]) => { const g = KB.wepRange(w); return `${Names.typeName(w)}${g ? ` [${g[0]} range]` : ''} ×${n}`; }).join(', ');
+    L.push(`EVE Online head to head — ${who} vs every ship type it met`);
+    L.push(`Source: ${D.src === 'phone' ? 'killmails downloaded on my phone' : `my PC's killmail database (${fmtNum(D.db?.n || 0)} killmails, ${fmtDate(D.db?.from)} to ${fmtDate(D.db?.to)})${D.recent ? ` plus ${D.recent} newer from my phone` : ''}`}.`);
+    L.push(`Filters: ${f.days ? `last ${f.days} days` : 'all time'}${f.solo ? ', solo only' : ''}, NPCs ${KB.hideNpcs() ? 'excluded' : 'included'}, capsules and ${who}-vs-${who} excluded. Sorted by ${sortBy === 'deaths' ? 'most died to' : 'most killed'}.`);
+    L.push(`Won = ${who} killed that ship type. Lost = a ${who} loss with that ship type on the killmail (players only). Weapon range is a rough guide from the weapon name.`);
+    L.push(`${who} kills: ${fmtNum(D.kills || 0)}, losses: ${fmtNum(D.losses || 0)}.`);
+    L.push('');
+    L.push('enemy ship (class) | won | lost | win % | its final blows on us | our weapons when we won | their weapons when we lost');
+    for (const r of rows) L.push([`${Names.typeName(r.type)} (${Names.typeClass(r.type)})`, r.w, r.l, pct(r) + '%', r.fb, wl(r.weap) || '—', wl(r.lw) || '—'].join(' | '));
+    return L.join('\n');
+  },
+  // ── a pilot's threat card ──
+  intelText(id) {
+    const r = INTEL.state().rows.find(x => x.id === id), x = INTEL.info.get(id) || {}, s = x.stats || {}, a = x.aff || {};
+    const L = [`EVE Online pilot: ${r?.name}`, `Corp / alliance: ${[Names.name(a.corporation_id), a.alliance_id ? Names.name(a.alliance_id) : ''].filter(Boolean).join(' / ') || '—'}`,
+      `zKillboard all time: ${fmtNum(s.shipsDestroyed || 0)} kills, ${fmtNum(s.shipsLost || 0)} losses, ${fmtNum(s.soloKills || 0)} solo kills, danger ${s.dangerRatio ?? '—'}%, gang ${s.gangRatio ?? '—'}%, ISK destroyed ${fmtISK(s.iskDestroyed || 0)}, ISK lost ${fmtISK(s.iskLost || 0)}`];
+    if (x.last) L.push(`Last seen: ${fmtDateTime(x.last.t)} EVE time, ${x.last.kind === 'loss' ? 'lost' : 'got a kill in'} ${Names.typeName(x.last.ship)}${x.last.kind === 'kill' ? ` (victim ${Names.typeName(x.last.vship)})` : ''} in ${Names.name(x.last.sys) || x.last.sys}`);
+    const fl = INTEL.flying(x);
+    if (fl.length) L.push(`Ships flown on their last ${x.recentN} killmails (kills/losses, capsules left out): ${fl.map(([t, v]) => `${Names.typeName(t)} ${v.k}/${v.l}`).join(', ')}`);
+    L.push(`zKillboard: https://zkillboard.com/character/${id}/`);
+    return L.join('\n');
   },
 };
 
@@ -1841,6 +1951,7 @@ const KB = {
       <div><div class="char-name">${esc(c?.name || '')}</div>
       <div class="char-corp">${esc(info.corp || '')}${info.alliance ? ' · ' + esc(info.alliance) : ''}</div></div>`;
     if (id > 0) $('#kb-zk-link').innerHTML = `<a href="https://zkillboard.com/character/${id}/" target="_blank" rel="noopener">Open on zKillboard ↗</a>`;
+    $('#kb-zk-link').insertAdjacentHTML('beforeend', ` · <a href="#" data-aikb="1">📋 Copy history for AI</a>`);
     const s = this.zkStats.get(id);
     if (!s) $('#kb-stats').innerHTML = '<div class="empty">Loading…</div>';
     else if (s._err) $('#kb-stats').innerHTML = `<div class="empty">zKillboard stats unavailable: ${esc(s._err)}</div>`;
@@ -1951,12 +2062,13 @@ const KB = {
     if (/warrior|hobgoblin|acolyte|hornet|hammerhead|valkyrie|infiltrator|vespa|ogre|praetor|berserker|wasp|gecko|drone|curator|vespa|templar|dragonfly|firbolg|einherji|gram|tyrfing|siren|cyclops|shadow|mantis|malleus|locust|satyr|scarab|equite|termite/.test(n)) return ['drones', 'purple'];
     return null;
   },
-  h2hLocal(f, me) {
+  h2hLocal(f, me, after = 0) {
     const m = new Map(), allW = new Map();
     const get = t => { let r = m.get(t); if (!r) m.set(t, r = { type: t, w: 0, l: 0, fb: 0, weap: new Map(), lw: new Map() }); return r; };
     const add = (mp, k) => mp.set(k, (mp.get(k) || 0) + 1);
     let kills = 0, losses = 0;
     for (const { km, kind } of this.mails(f)) {
+      if (after && km.t <= after) continue;
       if (kind === 'kill') {
         const t = km.v[3]; kills++; const r = get(t); r.w++;
         const ws = new Set(km.a.filter(a => this.isPlayer(a) && a[1] === me && a[5] && a[5] !== me).map(a => a[5]));
@@ -1984,19 +2096,33 @@ const KB = {
       const maps = l => new Map((l || []).map(([w, n]) => [w, n]));
       this.pcH2H.set(key, { at: Date.now(), src: 'pc', kills: r.kills, losses: r.losses, db: r.db, allW: maps(r.wk),
         rows: r.rows.map(([type, w, l, fb, ww, lw]) => ({ type, w, l, fb, weap: maps(ww), lw: maps(lw) })) });
-    } catch (e) { this.pcH2H.set(key, { err: e.message }); }
+    } catch (e) { this.pcH2H.set(key, { err: e.message, at: Date.now() }); }
     this.renderShips();
+  },
+  // PC database (everything up to its newest day) + this phone's own killmails newer than that → one table
+  mergeH2H(pc, local) {
+    const m = new Map(), addMap = (a, b) => { for (const [k, v] of b) a.set(k, (a.get(k) || 0) + v); };
+    for (const r of [...pc.rows, ...local.rows]) {
+      const x = m.get(r.type) || { type: r.type, w: 0, l: 0, fb: 0, weap: new Map(), lw: new Map() };
+      x.w += r.w; x.l += r.l; x.fb += r.fb; addMap(x.weap, r.weap); addMap(x.lw, r.lw); m.set(r.type, x);
+    }
+    const allW = new Map(pc.allW); addMap(allW, local.allW);
+    return { src: 'auto', rows: [...m.values()], allW, kills: pc.kills + local.kills, losses: pc.losses + local.losses, db: pc.db, recent: local.kills + local.losses };
   },
   renderH2H() {
     const box = $('#ships-list'), me = this.ship(), f = this.filters('ships');
     const q = $('#ships-search').value.trim().toLowerCase(), grouped = $('#ships-group .on').dataset.v === 'group';
     const pct = r => r.w + r.l ? Math.round(r.w / (r.w + r.l) * 100) : 0;
-    const ui = LS.get(KEYS.ui, {}), fromPC = ui.h2hSrc === 'pc';
+    const ui = LS.get(KEYS.ui, {}), fromPC = ui.h2hSrc !== 'phone' && !!PCL.code(); // default: your PC's database first
     const key = `${me}|${f.days}|${f.solo ? 1 : 0}|${this.hideNpcs() ? 0 : 1}`;
     let D;
+    let pcNote = '';
     if (fromPC) {
-      D = this.pcH2H.get(key);
-      if (!D) { this.askPC(me, f); D = { loading: true }; }
+      const pc = this.pcH2H.get(key);
+      if (!pc || (pc.err && Date.now() - pc.at > 5 * 60e3)) { this.askPC(me, f); D = { loading: true }; }
+      else if (pc.loading) D = pc;
+      else if (pc.err) { D = this.h2hLocal(f, me); pcNote = `🖥 ${esc(pc.err)} Showing this phone's killmails instead.`; }
+      else D = this.mergeH2H(pc, this.h2hLocal(f, me, pc.db?.to || 0));
     } else D = this.h2hLocal(f, me);
     // Same hull vs itself can't be scored (a Rifter killing a Rifter is also a Rifter loss), and capsules aren't matchups.
     let rows = (D.rows || []).filter(r => r.type && r.type !== me && !(f.pods && CAPSULES.has(r.type)) && !CAPSULES.has(r.type));
@@ -2008,11 +2134,13 @@ const KB = {
     const allW = D.allW || new Map(), topW = [...allW].sort((a, b) => b[1] - a[1]), totW = topW.reduce((s, x) => s + x[1], 0);
     const top1 = mp => { const t = [...(mp || new Map())].sort((a, b) => b[1] - a[1])[0]; return t ? [t[0], Math.round(t[1] / [...mp.values()].reduce((s, v) => s + v, 0) * 100)] : null; };
     const wtag = id => { const r = this.wepRange(id); return r ? ` <span class="${r[1]}" style="font-size:10px">${r[0]}</span>` : ''; };
-    const src = `<span class="seg" style="margin:0 0 6px 6px"><button data-h2hsrc="phone" class="${fromPC ? '' : 'on'}">📱 This phone</button><button data-h2hsrc="pc" class="${fromPC ? 'on' : ''}">🖥 PC database</button></span>`;
+    const src = `<span class="seg" style="margin:0 0 6px 6px"><button data-h2hsrc="pc" class="${fromPC ? 'on' : ''}">🖥 PC database + recent</button><button data-h2hsrc="phone" class="${fromPC ? '' : 'on'}">📱 Phone only</button></span>`;
     $('#ships-sum').textContent = D.loading ? 'Asking your PC…' : D.err ? '' : `${fmtNum(D.kills || 0)} kills · ${fmtNum(D.losses || 0)} losses · ${rows.length} ship types met`;
     $('#ships-hint').innerHTML = `<span class="seg" style="margin-bottom:6px"><button data-h2hsort="kills" class="${sortBy === 'kills' ? 'on' : ''}">Most killed</button><button data-h2hsort="deaths" class="${sortBy === 'deaths' ? 'on' : ''}">Most died to</button></span>${src}<br>`
-      + (fromPC && D.db ? `<div class="cls">🖥 From your PC's database: ${fmtNum(D.db.n)} killmails, ${fmtDate(D.db.from)} – ${fmtDate(D.db.to)} · <a href="#" data-h2hrefresh="1">refresh</a></div>` : '')
-      + `<b>Win %</b> = how often the ${who} killed that ship type ÷ (those kills + ${who} losses that type was on). ${who} vs ${who} and capsules are left out. Turn on <b>Solo only</b> for true 1-v-1s. Small counts are greyed.`
+      + (fromPC && D.db ? `<div class="cls">🖥 Your PC's database: ${fmtNum(D.db.n)} killmails, ${fmtDate(D.db.from)} – ${fmtDate(D.db.to)}${D.recent ? ` · 📱 +${fmtNum(D.recent)} newer from this phone` : ''} · <a href="#" data-h2hrefresh="1">refresh</a></div>` : '')
+      + (pcNote ? `<div class="cls orange">${pcNote}</div>` : '')
+      + (!PCL.code() ? `<div class="cls muted">Link your PC (Fits → 🖥 PC link) to use its kill database here.</div>` : '')
+      + `<a href="#" data-aih2h="1" style="float:right">📋 Copy for AI</a><b>Win %</b> = how often the ${who} killed that ship type ÷ (those kills + ${who} losses that type was on). ${who} vs ${who} and capsules are left out. Turn on <b>Solo only</b> for true 1-v-1s. Small counts are greyed.`
       + (topW.length ? `<div style="margin-top:4px">How it kills: ${topW.slice(0, 6).map(([w, n]) => `${esc(Names.typeName(w))}${wtag(w)} ${Math.round(n / totW * 100)}%`).join(' · ')}</div>` : '');
     const rowHTML = r => {
       const n = r.w + r.l, p = pct(r), open = this.open.ships === r.type, thin = n < 3;
@@ -2030,6 +2158,7 @@ const KB = {
         ${D.src === 'phone' && r.l ? `<div class="dl tap" data-kml="sd|${me}|${r.type}"><span></span><span class="teal">Open the ${fmtNum(r.l)} losses</span><span class="cnt">›</span></div>` : ''}
         <div class="row"><button class="btn sm ghost" data-subfits="flown|${me}" style="margin-top:8px">🧩 ${who} fits + inferred</button><button class="btn sm ghost" data-subfits="victims|${r.type}" style="margin-top:8px">🧩 ${tn} fits it beat</button><a class="btn sm ghost" href="https://zkillboard.com/fits/${r.type}/" target="_blank" rel="noopener" style="margin-top:8px">zKill ${tn} fits ↗</a></div></div>`;
     };
+    this.lastH2H = { D, rows, who: Names.typeName(me), sortBy, f };
     if (D.loading) box.innerHTML = '<div class="empty">🖥 Asking your PC\'s kill database…</div>';
     else if (D.err) box.innerHTML = `<div class="empty">🖥 ${esc(D.err)}</div>`;
     else if (!rows.length) box.innerHTML = `<div class="empty">${D.src === 'pc' ? 'Your PC database has nothing for this ship and these filters yet.' : this.kms.size ? 'Nothing here for these filters.' : 'No killmails loaded yet — use ⇣ Load older or ⇊ Load all, or switch to 🖥 PC database.'}</div>`;
@@ -5446,6 +5575,13 @@ function wire() {
   CS.wire();
   INF.wire();
   INTEL.wire();
+  AIX.wire();
+  document.addEventListener('click', e => {
+    const k = e.target.closest('[data-aikb]');
+    if (k) { e.preventDefault(); const who = KB.isShip() ? Names.typeName(KB.ship()) : KB.current()?.name || 'pilot'; AIX.open(`${who} killboard`, o => AIX.kbHistory(o), [{ id: 'rows', label: 'Include every killmail (not just the summary)', on: true }]); }
+    const h = e.target.closest('[data-aih2h]');
+    if (h) { e.preventDefault(); AIX.open(`${Names.typeName(KB.ship())} head to head`, async () => AIX.h2hText()); }
+  });
   EXP.wire();
   PCL.wire();
   // backup / restore
