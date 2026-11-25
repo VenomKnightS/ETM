@@ -6,6 +6,9 @@ your Windows clipboard, ready to paste into Pyfa or EVE's fitting window (Import
 
   • Standard library only — no pip installs. Run:  python etm_pc_link.py   (or double-click)
   • Shows a pairing code. Enter it on your phone: Fits tab → 🖥 PC link.
+  • Intel: with "Send EVE local / d-scan to my phone" on, copying the local member list or a d-scan in EVE
+    sends it to the phone's 📡 Intel tab. Only text that looks like local or a d-scan is sent, and by default
+    only when an EVE window is in front.
   • Optional password: set one here (Password… button) and any device can link by typing the
     password instead of the code — this helper keeps the code posted, locked with the password.
   • Messages travel through the free ntfy.sh relay, compressed and encrypted with keys derived
@@ -20,7 +23,7 @@ import urllib.request, urllib.error
 from pathlib import Path
 
 APP = 'EVE Tiles Mobile PC Link'
-VERSION = '1.3'
+VERSION = '1.4'
 RELAY = os.environ.get('ETM_RELAY', 'https://ntfy.sh').rstrip('/')
 SALT, ITER = b'etm-pclink-v1', 150000
 ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'  # no 0/O, 1/I/L
@@ -93,6 +96,110 @@ def keep_code_posted(cfg, on_status, stop):
                     stop.wait(300); continue
             stop.wait(60)
     t = threading.Thread(target=loop, daemon=True); t.start(); return t
+
+# ── Intel: PC → phone channel (separate from the phone → PC channel) ─────────────────
+import re as _re
+NAME_RX = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '.\-]{1,36}$")
+CHUNK = 3800
+
+def intel_topic(code):
+    _, enc, mac = derive(code)
+    return 'etm-i-' + hmac.new(mac, b'intel', hashlib.sha256).digest()[:16].hex()
+
+def classify_intel(text):
+    """'local' (pilot names, one per line), 'dscan' (tab-separated scan lines) or None (anything else is never sent)."""
+    lines = [l.strip() for l in (text or '').replace('\r', '').split('\n') if l.strip()]
+    if not lines or len(text) > 60000:
+        return None
+    if sum('\t' in l for l in lines) >= max(1, len(lines) * 0.8):
+        return 'dscan'
+    if len(lines) <= 300 and all(NAME_RX.match(l) for l in lines) and not any(l.lower().startswith(('http', 'www.')) for l in lines):
+        return 'local'
+    return None
+
+def post_chunked(topic, payload):
+    if len(payload) <= CHUNK:
+        relay_post(topic, payload); return
+    sid = secrets.token_hex(4); n = (len(payload) + CHUNK - 1) // CHUNK
+    for i in range(n):
+        relay_post(topic, f'ETMC:{sid}:{i}:{n}:{payload[i * CHUNK:(i + 1) * CHUNK]}')
+
+def send_intel(code, text):
+    _, enc, mac = derive(code)
+    post_chunked(intel_topic(code), encrypt(json.dumps({'k': 'intel', 'text': text, 'ts': int(time.time() * 1000)}), enc, mac))
+
+def eve_in_front():
+    """True when the foreground window is an EVE client (window class triuiScreen)."""
+    if sys.platform != 'win32':
+        return True
+    import ctypes
+    u32 = ctypes.windll.user32
+    h = u32.GetForegroundWindow()
+    buf = ctypes.create_unicode_buffer(256)
+    u32.GetClassNameW(h, buf, 256)
+    cls = buf.value
+    u32.GetWindowTextW(h, buf, 256)
+    return cls == 'triuiScreen' or buf.value.startswith('EVE')
+
+def get_clipboard_text():
+    if sys.platform != 'win32':
+        return None
+    import ctypes
+    from ctypes import wintypes
+    u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+    u32.GetClipboardData.restype = wintypes.HANDLE
+    k32.GlobalLock.argtypes = [wintypes.HGLOBAL]; k32.GlobalLock.restype = wintypes.LPVOID
+    k32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    for _ in range(10):
+        if u32.OpenClipboard(None):
+            break
+        time.sleep(0.03)
+    else:
+        return None
+    try:
+        h = u32.GetClipboardData(13)  # CF_UNICODETEXT
+        if not h:
+            return None
+        p = k32.GlobalLock(h)
+        try:
+            return ctypes.wstring_at(p)
+        finally:
+            k32.GlobalUnlock(h)
+    finally:
+        u32.CloseClipboard()
+
+class ClipWatch(threading.Thread):
+    """Watches Windows' clipboard change counter (no keyboard hook) and sends EVE local / d-scan copies."""
+    def __init__(self, cfg, on_status):
+        super().__init__(daemon=True)
+        self.cfg, self.on_status, self.stop = cfg, on_status, threading.Event()
+        self.own = 0  # our own clipboard writes (received fits) are skipped
+    def run(self):
+        if sys.platform != 'win32':
+            return
+        import ctypes
+        seq = ctypes.windll.user32.GetClipboardSequenceNumber
+        last = seq()
+        while not self.stop.is_set():
+            self.stop.wait(0.25)
+            n = seq()
+            if n == last:
+                continue
+            last = n
+            if self.own and n <= self.own + 2:
+                continue
+            if not self.cfg.get('intel') or (self.cfg.get('intel_eve_only', True) and not eve_in_front()):
+                continue
+            text = get_clipboard_text()
+            kind = classify_intel(text)
+            if not kind:
+                continue
+            try:
+                send_intel(self.cfg['code'], text)
+                cnt = len([l for l in text.splitlines() if l.strip()])
+                self.on_status('connected', f'📡 Sent {"d-scan" if kind == "dscan" else "local"} ({cnt} line{"s" if cnt != 1 else ""}) to your phone')
+            except Exception as e:
+                self.on_status('warn', f'Could not send intel ({e})')
 
 def _stream(key, nonce, data):
     out = bytearray(len(data))
@@ -263,7 +370,7 @@ def run_gui():
         cfg['code'] = new_code(); save_config(cfg)
     q = queue.Queue()
     root = tk.Tk()
-    root.title(f'{APP} {VERSION}'); root.configure(bg=BG); root.geometry('520x470'); root.minsize(420, 400)
+    root.title(f'{APP} {VERSION}'); root.configure(bg=BG); root.geometry('560x510'); root.minsize(460, 440)
     try:
         root.iconbitmap(default='')
     except Exception:
@@ -326,6 +433,8 @@ def run_gui():
                         status_var.set('🟢 Connection test passed — waiting for fits'); continue
                     text = m.get('text', '')
                     try:
+                        if sys.platform == 'win32':
+                            import ctypes; watch.own = ctypes.windll.user32.GetClipboardSequenceNumber()
                         set_clipboard(text, root)
                     except Exception as e:
                         toast('⚠ Clipboard busy', str(e), RED); continue
@@ -418,6 +527,14 @@ def run_gui():
     mk(hdr, 'Clear', clear_list).pack(side='right')
     for text, var, cmd in (('Start with Windows', start_var, toggle_start), ('Sound', sound_var, toggle_sound)):
         tk.Checkbutton(opts, text=text, variable=var, command=cmd, bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG, activeforeground=TEAL, font=font).pack(side='left', padx=8)
+    intel_var = tk.BooleanVar(value=cfg.get('intel', False)); eveonly_var = tk.BooleanVar(value=cfg.get('intel_eve_only', True))
+    def toggle_intel():
+        cfg['intel'] = intel_var.get(); cfg['intel_eve_only'] = eveonly_var.get(); save_config(cfg)
+        status_var.set('📡 Copy local or a d-scan in EVE — it goes to your phone\'s Intel tab.' if cfg['intel'] else 'Intel sending off.')
+    iopts = tk.Frame(root, bg=BG); iopts.pack(pady=(0, 10))
+    tk.Checkbutton(iopts, text='📡 Send EVE local / d-scan copies to my phone', variable=intel_var, command=toggle_intel, bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG, activeforeground=TEAL, font=font).pack(side='left', padx=6)
+    tk.Checkbutton(iopts, text='only when EVE is in front', variable=eveonly_var, command=toggle_intel, bg=BG, fg=DIM, selectcolor=PANEL, activebackground=BG, activeforeground=TEAL, font=('Segoe UI', 9)).pack(side='left')
+    watch = ClipWatch(cfg, lambda k, s_: q.put(('status', k, s_))); watch.start()
     start_listener()
     root.after(200, poll)
     root.mainloop()
@@ -428,9 +545,19 @@ def main(argv):
         code = new_code(); _, enc, mac = derive(code)
         msg = json.dumps({'k': 'fit', 'title': 'Test', 'text': '[Rifter, Test]\nDamage Control II\n'})
         assert json.loads(decrypt(encrypt(msg, enc, mac), enc, mac))['text'].startswith('[Rifter')
+        assert classify_intel('Dom Test\nSome Pilot\nX-ray 9') == 'local'
+        assert classify_intel('1234\tRifter\tRifter\t5 km\n555\tTitan\tAvatar\t9 AU') == 'dscan'
+        assert classify_intel('https://example.com') is None and classify_intel('def f(x):\n  return {x}') is None
         print('self-test OK'); return 0
     if '--decrypt' in argv:  # --decrypt CODE PAYLOAD  (debug helper)
         i = argv.index('--decrypt'); _, enc, mac = derive(argv[i + 1]); print(decrypt(argv[i + 2], enc, mac)); return 0
+    if '--send-intel' in argv:  # --send-intel FILE : send a saved local list / d-scan (what the clipboard watch does)
+        cfg = load_config()
+        text = Path(argv[argv.index('--send-intel') + 1]).read_text(encoding='utf-8')
+        kind = classify_intel(text)
+        if not kind:
+            print('not local or d-scan — not sent'); return 2
+        send_intel(cfg['code'], text); print(f'sent {kind}'); return 0
     if '--set-password' in argv or '--clear-password' in argv:  # --set-password "my phrase" / --clear-password
         cfg = load_config()
         if not cfg.get('code'):
