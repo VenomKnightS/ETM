@@ -27,7 +27,14 @@
   #auth-wrap { position:relative; margin-left:8px; }
   #auth-btn { background:#1a2f1a; border:1px solid #3a6a3a; color:#80d080; font-size:12px; padding:5px 10px; border-radius:var(--radius); cursor:pointer; white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis; }
   #auth-btn.linked { background:#1a2a3a; border-color:#3a6a9a; color:var(--teal); }
-  @media (max-width:600px) { #nav .logo { display:none; } #auth-btn { max-width:120px; } .tab-btn { padding:0 9px; } }
+  @media (max-width:600px) {
+    /* phones: every tab visible — tabs wrap onto their own rows under the logo / login line */
+    #nav { flex-wrap:wrap; height:auto; padding:0 8px; }
+    #nav .logo { font-size:13px; line-height:40px; flex:1; }
+    #auth-btn { max-width:150px; }
+    #tabs { order:3; flex-basis:100%; flex-wrap:wrap; overflow:visible; border-top:1px solid var(--border); }
+    .tab-btn { padding:0 8px; height:36px; font-size:12px; flex:1 0 auto; }
+  }
   #auth-menu { display:none; position:absolute; right:0; top:36px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); min-width:250px; z-index:30; box-shadow:0 6px 20px #0008; }
   #auth-menu.open { display:block; }
   .menu-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid #0d1824; }
@@ -1317,7 +1324,9 @@ const INTEL = {
       if (run !== this.run) return; this.render();
       try {
         const list = await ZK.get(`/characterID/${r.id}/page/1/`);
-        const k = (Array.isArray(list) ? list : []).filter(z => z.killmail_id && z.zkb?.hash).sort((a, b) => b.killmail_id - a.killmail_id)[0];
+        const sorted = (Array.isArray(list) ? list : []).filter(z => z.killmail_id && z.zkb?.hash).sort((a, b) => b.killmail_id - a.killmail_id);
+        x.ids = sorted.slice(0, 50).map(z => [z.killmail_id, z.zkb.hash]);
+        const k = sorted[0];
         if (k) {
           const km = KMV.cache.get(k.killmail_id) || await ESI.req(`/killmails/${k.killmail_id}/${k.zkb.hash}/`);
           KMV.cache.set(k.killmail_id, km);
@@ -1335,9 +1344,31 @@ const INTEL = {
     const d = s.dangerRatio ?? 0;
     return { cls: d >= 70 ? 'hi' : d >= 40 ? 'mid' : 'lo', txt: d + '%' };
   },
-  topShips(s) { // zKillboard's all-time "top ships" list, when it sends one
-    const l = (s?.topAllTime || []).find(t => t.type === 'ship');
-    return (l?.data || []).map(e => [e.shipTypeID || e.id, e.kills || e.count || 0]).filter(e => e[0]).slice(0, 5);
+  // What they've been flying: the ship they were in on each of their newest killmails (capsules left out).
+  async recent(r, n = 15) {
+    const x = this.info.get(r.id); if (!x?.ids || x.recentN >= Math.min(n, x.ids.length)) return;
+    const take = x.ids.slice(0, n), out = [];
+    let i = 0;
+    const worker = async () => {
+      while (i < take.length) {
+        const [id, h] = take[i++];
+        try {
+          const km = KMV.cache.get(id) || await ESI.req(`/killmails/${id}/${h}/`, { retries: 1 });
+          KMV.cache.set(id, km);
+          const loss = km.victim?.character_id === r.id, me = loss ? km.victim : (km.attackers || []).find(a => a.character_id === r.id);
+          if (me?.ship_type_id) out.push({ ship: me.ship_type_id, loss, t: Date.parse(km.killmail_time) });
+        } catch { }
+      }
+    };
+    await Promise.all(Array.from({ length: 5 }, worker));
+    x.recentList = out.sort((a, b) => b.t - a.t); x.recentN = take.length;
+    await Names.load(out.map(o => o.ship));
+    if (this.open === r.id) this.render();
+  },
+  flying(x) {
+    const m = new Map();
+    for (const o of x.recentList || []) { if (CAPSULES.has(o.ship)) continue; const e = m.get(o.ship) || { k: 0, l: 0 }; o.loss ? e.l++ : e.k++; m.set(o.ship, e); }
+    return [...m].sort((a, b) => (b[1].k + b[1].l) - (a[1].k + a[1].l));
   },
   render() {
     const d = this.state(), rows = d.rows;
@@ -1347,7 +1378,8 @@ const INTEL = {
     $('#intel-list').innerHTML = `<div class="card" style="padding:0">${rows.map((r, i) => {
       const x = this.info.get(r.id) || {}, s = x.stats, th = this.threat(s), a = x.aff;
       const org = a ? [Names.name(a.corporation_id), a.alliance_id ? Names.name(a.alliance_id) : ''].filter(Boolean).join(' · ') : '';
-      const last = x.last ? `${ago(x.last.t)} · ${esc(Names.typeName(x.last.ship))} · ${esc(Names.name(x.last.sys) || '')}` : x.at ? 'no killboard activity' : r.missing ? 'not a pilot name' : '';
+      const hull = x.last && CAPSULES.has(x.last.ship) ? (x.recentList || []).find(o => !CAPSULES.has(o.ship))?.ship : null;
+      const last = x.last ? `${ago(x.last.t)} · ${esc(Names.typeName(x.last.ship))}${hull ? ` (last ship ${esc(Names.typeName(hull))})` : ''} · ${esc(Names.name(x.last.sys) || '')}` : x.at ? 'no killboard activity' : r.missing ? 'not a pilot name' : '';
       const kl = s && !s._err && (s.shipsDestroyed || s.shipsLost) ? `<span class="green">${fmtNum(s.shipsDestroyed || 0)}</span>/<span class="red">${fmtNum(s.shipsLost || 0)}</span>` : '';
       return `<div class="intel-row" data-i="${i}"><button class="lk${r.lock ? ' on' : ''}" data-lock="${i}" title="Keep through the next paste">🔒</button>
         ${r.id ? `<img src="${portrait(r.id, 64)}" alt="" loading="lazy">` : '<img alt="">'}
@@ -1360,13 +1392,17 @@ const INTEL = {
     const x = this.info.get(r.id) || {}, s = x.stats || {}, a = x.aff || {};
     const box = (l, v, c = '') => `<div class="stat-box"><div class="stat-label">${l}</div><div class="stat-val ${c}">${v}</div></div>`;
     const iD = s.iskDestroyed || 0, iL = s.iskLost || 0, eff = iD + iL ? Math.round(iD / (iD + iL) * 100) : 0;
-    const top = this.topShips(s);
+    const top = this.flying(x);
+    if (x.ids?.length && !x.recentList) this.recent(r);
     return `<div class="drill" style="margin:0 8px 8px">
       <div class="cls" style="margin-bottom:6px">${esc([Names.name(a.corporation_id), a.alliance_id ? Names.name(a.alliance_id) : ''].filter(Boolean).join(' · '))}</div>
       <div class="stat-grid" id="intel-stats">${box('Kills', fmtNum(s.shipsDestroyed || 0), 'green')}${box('Losses', fmtNum(s.shipsLost || 0), 'red')}${box('ISK eff.', eff + '%', eff >= 50 ? 'green' : 'red')}
         ${box('Solo kills', fmtNum(s.soloKills || 0), 'purple')}${s.dangerRatio != null ? box('Danger', s.dangerRatio + '%', 'orange') : ''}${s.gangRatio != null ? box('Gang', s.gangRatio + '%', 'teal') : ''}</div>
       ${x.last ? `<div class="dl tap" data-intelkm="${x.last.km}|${x.last.hash}" style="margin-top:8px"><span></span><span><b>Last seen ${ago(x.last.t)}</b> — ${x.last.kind === 'loss' ? 'lost' : 'killed with'} ${esc(Names.typeName(x.last.ship))}${x.last.kind === 'kill' ? ` (victim: ${esc(Names.typeName(x.last.vship))})` : ''} in ${esc(Names.name(x.last.sys) || '…')}</span><span class="cnt">›</span></div>` : ''}
-      ${top.length ? `<h4 style="margin-top:8px">Top ships (all time)</h4>${KB.drillList(top, v => v ? '×' + fmtNum(v) : '')}` : ''}
+      <h4 style="margin-top:8px">Flying lately${x.recentN ? ` — their last ${x.recentN} killmail${x.recentN === 1 ? '' : 's'}` : ''}</h4>
+      ${!x.ids?.length ? '<div class="muted">No killmails on zKillboard.</div>' : !x.recentList ? '<div class="muted">Reading their newest killmails…</div>'
+        : top.length ? KB.drillList(top, v => `<span class="green">${v.k}</span>/<span class="red">${v.l}</span>`) + '<div class="cls muted">kills / losses in that ship · capsules left out</div>' : '<div class="muted">Only capsule activity lately.</div>'}
+      ${x.recentList && x.ids.length > x.recentN ? `<button class="btn sm ghost" data-intelmore="${r.id}" style="margin-top:4px">Look further back (${Math.min(50, x.ids.length)})</button>` : ''}
       <div class="row" style="margin-top:8px"><button class="btn sm" data-intelkb="${r.id}">☠ Full killboard · Matchups · Habits</button><a class="btn sm ghost" href="https://zkillboard.com/character/${r.id}/" target="_blank" rel="noopener">zKillboard ↗</a></div></div>`;
   },
   renderDscan(p, from) {
@@ -1430,6 +1466,8 @@ const INTEL = {
       if (lk) { const d = this.state(), r = d.rows[+lk.dataset.lock]; r.lock = !r.lock; this.save(d); this.render(); return; }
       const kb = e.target.closest('[data-intelkb]');
       if (kb) { const r = this.state().rows.find(x => x.id === +kb.dataset.intelkb); KB.ensure(r.id, r.name); KB.select(r.id); UI.show('kb'); return; }
+      const more = e.target.closest('[data-intelmore]');
+      if (more) { const r = this.state().rows.find(x => x.id === +more.dataset.intelmore); more.disabled = true; more.textContent = 'Reading…'; this.recent(r, 50); return; }
       const km = e.target.closest('[data-intelkm]');
       if (km) { const [id, h] = km.dataset.intelkm.split('|'); KMV.show(+id, h); return; }
       if (e.target.closest('a')) return;
