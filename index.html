@@ -70,8 +70,12 @@
   #charbar { display:none; background:#0c121b; border-bottom:1px solid var(--border); padding:8px 14px; }
   #charbar.show { display:block; }
   #charbar .inner { max-width:1100px; margin:0 auto; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  #kb-char { min-width:180px; max-width:260px; }
-  #kb-add { width:170px; }
+  .kb-look { display:flex; gap:6px; align-items:center; flex:1 1 400px; flex-wrap:wrap; }
+  .kb-look select { flex:1 1 150px; min-width:140px; max-width:260px; }
+  .kb-look input { flex:1 1 130px; min-width:120px; width:auto; }
+  .kb-look .lbl { color:var(--dim); font-size:11px; width:34px; }
+  .kb-look.active select { border-color:var(--teal); }
+  @media (min-width:700px) { .kb-look { flex-wrap:nowrap; } .kb-look select { flex:1 1 120px; min-width:100px; } .kb-look input { flex:1 1 110px; min-width:90px; } }
   #sync-info { color:var(--dim); font-size:11px; flex-basis:100%; }
   .progress { height:4px; background:#1a2535; border-radius:2px; overflow:hidden; margin-top:4px; }
   .progress > div { height:100%; background:var(--teal); width:0; transition:width .3s; }
@@ -302,11 +306,19 @@
 <!-- Character selector shared by the killboard tabs -->
 <div id="charbar">
   <div class="inner">
-    <select id="kb-char" title="Character"></select>
-    <button class="btn sm ghost" id="kb-star" title="Tracked characters sync their full history automatically">☆ Track</button>
-    <span class="grow"></span>
-    <input id="kb-add" type="text" placeholder="Look up pilot…">
-    <button class="btn sm" id="kb-add-btn">Look up</button>
+    <div class="kb-look" id="kb-look-pilot"><span class="lbl">Pilot</span>
+      <select id="kb-char" title="Character"></select>
+      <button class="btn sm ghost" id="kb-star" title="Tracked characters sync their full history automatically">☆ Track</button>
+      <input id="kb-add" type="text" placeholder="Look up pilot…">
+      <button class="btn sm" id="kb-add-btn">Look up</button>
+    </div>
+    <div class="kb-look" id="kb-look-ship"><span class="lbl">Ship</span>
+      <select id="kb-ship" title="Ship"></select>
+      <button class="btn sm ghost" id="kb-ship-star" title="Favorite ships stay in this list">☆ Fav</button>
+      <input id="kb-ship-add" type="text" list="kb-ship-names" placeholder="Look up ship…" autocomplete="off">
+      <datalist id="kb-ship-names"></datalist>
+      <button class="btn sm" id="kb-ship-btn">Look up</button>
+    </div>
     <button class="btn sm green" id="kb-sync">⟳ Sync</button>
     <button class="btn sm ghost" id="kb-remove" title="Remove from this list">✕</button>
     <div id="sync-info"><span id="sync-text"></span><div class="progress"><div id="sync-bar"></div></div></div>
@@ -315,7 +327,7 @@
 
 <!-- ══════════ KILLBOARD ══════════ -->
 <div id="page-kb" class="page">
-  <div id="kb-empty" class="sso-info">Look up a pilot by name above. Pilots you mark <b>★ Tracked</b> keep their full kill history cached in this browser and sync new kills automatically.</div>
+  <div id="kb-empty" class="sso-info">Look up a pilot or a ship above. A ship lookup shows what that hull has been killing and dying to lately across all of EVE. Pilots you mark <b>★ Tracked</b> keep their full kill history cached in this browser and sync new kills automatically.</div>
   <div id="kb-body" style="display:none">
     <div id="kb-header" class="char-header"></div>
     <div class="card">
@@ -813,6 +825,7 @@ const KEYS = {
   ssoChars: 'eft.sso.characters.v1',    // { [charId]: { id, name, refresh, access, exp, scopes, needsLogin } }
   skillChar: 'eft.skills.activeChar.v1',
   tracked: 'eft.kb.tracked.v1',         // [{ id, name, star, added }]
+  ships: 'eft.kb.ships.v1',             // [{ id: shipTypeId, name, star, viewed }] — ship lookups on the killboard
   kbSelected: 'eft.kb.selected.v1',
   plans: 'eft.plans.v1',                // { schema, plans: [...] }
   charsets: 'eft.charsets.v1',          // { schema, groups: [...], chars: [...] }
@@ -1091,8 +1104,28 @@ const Sync = {
     job.st = st;
     const known = st.list;
     // ── Phase 1: list of killmail IDs + hashes from zKillboard ──
+    if (charId < 0) {
+      // A ship type has far too much history to take whole: the newest page each time, plus one older page per ⇣ Load older.
+      const pages = [1]; if (full) pages.push(Math.max(2, (st.pagesDone || 1) + 1));
+      for (const page of pages) {
+        if (job.abort) break;
+        job.phase = 'pages'; job.page = page; this.emit(job);
+        let data;
+        try { data = await ZK.get(`/shipTypeID/${-charId}/page/${page}/`); }
+        catch (e) { if (page > 1) { job.note = `zKillboard has no older pages for this ship (${e.message}).`; break; } throw e; }
+        if (!Array.isArray(data) || !data.length) { if (page > 1) job.note = 'No older killmails on zKillboard.'; break; }
+        for (const k of data) {
+          const id = k.killmail_id, z = k.zkb || {};
+          if (!id || !z.hash || known[id]) continue;
+          known[id] = [z.hash, Math.round(z.totalValue || 0), z.solo ? 1 : 0, z.npc ? 1 : 0];
+          job.newIds++;
+        }
+        st.pagesDone = Math.max(st.pagesDone || 0, page);
+        await DB.put('charSync', st);
+      }
+    }
     let page = 1;
-    while (!job.abort) {
+    while (charId > 0 && !job.abort) {
       job.phase = 'pages'; job.page = page; this.emit(job);
       let data;
       try { data = await ZK.get(`/characterID/${charId}/page/${page}/`); }
@@ -1167,6 +1200,28 @@ const KB = {
   open: { ships: null },
 
   tracked() { return LS.get(KEYS.tracked, []); },
+  // The killboard looks at one subject at a time: a pilot (positive ID) or a ship type (stored as a negative ID).
+  isShip(id = this.charId) { return id < 0; },
+  ship() { return -this.charId; },
+  ships() { return LS.get(KEYS.ships, []); },
+  saveShips(t) { LS.set(KEYS.ships, this.prune(t)); },
+  findShip(q) {
+    q = q.trim().toLowerCase(); if (!q) return null;
+    const all = Object.entries(SDE.ships).map(([id, v]) => ({ id: +id, name: v[0] }));
+    return all.find(s => s.name.toLowerCase() === q)
+      || (x => x.length === 1 ? x[0] : null)(all.filter(s => s.name.toLowerCase().startsWith(q)))
+      || (x => x.length === 1 ? x[0] : null)(all.filter(s => s.name.toLowerCase().includes(q)));
+  },
+  addShipByName(name) {
+    const s = this.findShip(name);
+    if (!s) { $('#sync-text').textContent = `No single ship matches "${name.trim()}" — pick one from the suggestions.`; return; }
+    const t = this.ships(), now = Math.max(Date.now(), ...t.map(x => (x.viewed || 0) + 1));
+    const c = t.find(x => x.id === s.id);
+    if (c) c.viewed = now; else t.push({ id: s.id, name: s.name, star: false, viewed: now });
+    this.saveShips(t);
+    $('#kb-ship-add').value = '';
+    this.select(-s.id);
+  },
   RECENT_MAX: 1,
   // Keeps every ★ tracked pilot plus only the one untracked pilot being looked at right now.
   prune(t) {
@@ -1175,7 +1230,7 @@ const KB = {
     return [...keep, ...recent];
   },
   saveTracked(t) { LS.set(KEYS.tracked, this.prune(t)); },
-  current() { return this.tracked().find(t => t.id === this.charId); },
+  current() { return this.isShip() ? this.ships().find(t => t.id === this.ship()) : this.tracked().find(t => t.id === this.charId); },
 
   renderSelector() {
     const t = this.tracked();
@@ -1187,11 +1242,29 @@ const KB = {
     sel.innerHTML = (t.length ? '' : '<option value="">— no pilots yet —</option>')
       + (starred.length ? `<optgroup label="★ Tracked">${starred.map(opt).join('')}</optgroup>` : '')
       + (recent.length ? `<optgroup label="Viewing — tap ☆ Track to keep">${recent.map(opt).join('')}</optgroup>` : '');
-    if (this.charId) sel.value = String(this.charId);
+    const ship = this.isShip();
+    if (this.charId && !ship) sel.value = String(this.charId);
+    else { sel.insertAdjacentHTML('afterbegin', '<option value="" selected>— pilot —</option>'); sel.value = ''; }
+    // ships: ★ favorites + the one being looked at
+    const sh = this.ships(), favs = sh.filter(c => c.star).sort((a, b) => a.name.localeCompare(b.name)), rec = sh.filter(c => !c.star);
+    const so = c => `<option value="${c.id}">${c.star ? '★ ' : ''}${esc(c.name)}</option>`;
+    $('#kb-ship').innerHTML = `<option value="">— ship —</option>`
+      + (favs.length ? `<optgroup label="★ Favorite ships">${favs.map(so).join('')}</optgroup>` : '')
+      + (rec.length ? `<optgroup label="Viewing — tap ☆ Fav to keep">${rec.map(so).join('')}</optgroup>` : '');
+    $('#kb-ship').value = ship ? String(this.ship()) : '';
+    if (!$('#kb-ship-names').childElementCount) $('#kb-ship-names').innerHTML = Object.values(SDE.ships).map(v => v[0]).sort().map(n => `<option value="${esc(n)}">`).join('');
+    $('#kb-look-pilot').classList.toggle('active', !!this.charId && !ship);
+    $('#kb-look-ship').classList.toggle('active', ship);
     const cur = this.current();
-    $('#kb-star').textContent = cur?.star ? '★ Tracked' : '☆ Track';
-    $('#kb-star').className = 'btn sm ' + (cur?.star ? 'gold' : 'ghost');
-    $('#kb-star').disabled = $('#kb-remove').disabled = $('#kb-sync').disabled = !cur;
+    const pc = ship ? null : cur, scur = ship ? cur : null;
+    $('#kb-star').textContent = pc?.star ? '★ Tracked' : '☆ Track';
+    $('#kb-star').className = 'btn sm ' + (pc?.star ? 'gold' : 'ghost');
+    $('#kb-star').disabled = !pc;
+    $('#kb-ship-star').textContent = scur?.star ? '★ Fav' : '☆ Fav';
+    $('#kb-ship-star').className = 'btn sm ' + (scur?.star ? 'gold' : 'ghost');
+    $('#kb-ship-star').disabled = !scur;
+    $('#kb-remove').disabled = $('#kb-sync').disabled = !cur;
+    $('#kb-sync').title = ship ? 'Download the next older page of this ship\'s killmails from zKillboard' : '';
   },
 
   async addByName(name) {
@@ -1225,7 +1298,8 @@ const KB = {
     }
     id = Number(id) || null;
     this.charId = id; LS.set(KEYS.kbSelected, id);
-    { const t = this.tracked(); const keep = t.filter(c => c.star || c.id === id); if (keep.length !== t.length) LS.set(KEYS.tracked, keep); } // drop untracked pilots you've moved away from
+    if (id > 0) { const t = this.tracked(); const keep = t.filter(c => c.star || c.id === id); if (keep.length !== t.length) LS.set(KEYS.tracked, keep); } // drop untracked pilots you've moved away from
+    if (id < 0) { const t = this.ships(); const keep = t.filter(c => c.star || c.id === -id); if (keep.length !== t.length) LS.set(KEYS.ships, keep); }
     this.kms = new Map(); this.st = null; this.feedPage = 1; this.open = { ships: null };
     this.renderSelector();
     if (!id) { this.renderAll(); return; }
@@ -1234,7 +1308,8 @@ const KB = {
     this.loadHeader(id);
     const cur = this.current();
     // Tracked pilots: full history. Others: newest page only, unless already synced before.
-    const full = !!cur?.star || (this.st && this.st.pagesDone > 1);
+    // Ships: always just the newest page (new kills since last look); ⇣ Load older goes deeper on request.
+    const full = id > 0 && (!!cur?.star || (this.st && this.st.pagesDone > 1));
     Sync.run(id, { full });
   },
 
@@ -1252,10 +1327,10 @@ const KB = {
 
   async loadHeader(id) {
     if (!this.zkStats.has(id)) {
-      ZK.get(`/stats/characterID/${id}/`).then(s => { this.zkStats.set(id, s || {}); if (this.charId === id) this.renderKB(); })
+      ZK.get(id < 0 ? `/stats/shipTypeID/${-id}/` : `/stats/characterID/${id}/`).then(s => { this.zkStats.set(id, s || {}); if (this.charId === id) this.renderKB(); })
         .catch(e => { this.zkStats.set(id, { _err: e.message }); if (this.charId === id) this.renderKB(); });
     }
-    if (!this.info.has(id)) {
+    if (id > 0 && !this.info.has(id)) {
       try {
         const c = await ESI.req(`/characters/${id}/`);
         await Names.load([c.corporation_id, c.alliance_id].filter(Boolean));
@@ -1272,7 +1347,7 @@ const KB = {
         for (const k of batch) this.kms.set(k.id, k);
         this.scheduleRender();
       }
-      if (job.done) this.loadCache().then(() => this.renderAll()); // renderAll redraws the sync line with fresh counts
+      if (job.done) { this.lastJob = job; this.loadCache().then(() => this.renderAll()); } // renderAll redraws the sync line with fresh counts
       else this.renderSyncInfo(job);
     }
   },
@@ -1291,6 +1366,16 @@ const KB = {
         bar.style.width = pct + '%';
       }
       $('#kb-sync').textContent = '■ Stop';
+    } else if (this.isShip()) {
+      bar.style.width = '0';
+      $('#kb-sync').textContent = '⇣ Load older';
+      if (st) {
+        const n = this.kms.size, oldest = n ? Math.min(...[...this.kms.values()].map(k => k.t)) : 0;
+        txt = `${fmtNum(n)} recent killmails for this ship` + (oldest ? ` · back to ${fmtDate(oldest)}` : '')
+          + ` · ${st.pagesDone || 1} zKillboard page${(st.pagesDone || 1) === 1 ? '' : 's'} — ⇣ Load older goes further back`;
+      }
+      if (job?.error) txt = '⚠ ' + job.error + (txt ? ' · ' + txt : '');
+      if (job?.note) txt += ' · ' + job.note;
     } else {
       bar.style.width = '0';
       $('#kb-sync').textContent = '⟳ Sync';
@@ -1318,6 +1403,7 @@ const KB = {
   },
   classify(km) {
     const me = this.charId;
+    if (me < 0) { if (km.v[3] === -me) return 'loss'; if (km.a.some(a => a[1] === -me)) return 'kill'; return null; }
     if (km.v[0] === me) return 'loss';
     if (km.a.some(a => a[0] === me)) return 'kill';
     return null;
@@ -1337,6 +1423,7 @@ const KB = {
   },
   myShipOn(km) {
     const me = this.charId;
+    if (me < 0) return -me;
     if (km.v[0] === me) return km.v[3];
     const a = km.a.find(x => x[0] === me);
     return a ? a[1] : 0;
@@ -1387,7 +1474,7 @@ const KB = {
     if (page === 'kb') this.renderKB();
     if (page === 'ships') this.renderShips();
     if (page === 'habits') this.renderHabits();
-    this.renderSyncInfo(Sync.jobs.get(this.charId));
+    this.renderSyncInfo(Sync.jobs.get(this.charId) || (this.lastJob?.charId === this.charId ? this.lastJob : null));
   },
 
   renderKB() {
@@ -1397,10 +1484,16 @@ const KB = {
     if (!id) return;
     const c = this.current();
     const info = this.info.get(id) || {};
+    if (id < 0) {
+      $('#kb-header').innerHTML = `<img class="char-portrait" src="${typeIcon(-id, 128)}" alt="">
+        <div class="grow"><div class="char-name">${esc(Names.typeName(-id))}</div><div class="char-corp">${esc(Names.typeClass(-id))} · every pilot flying it, newest first</div></div>
+        <button class="btn sm ghost" data-inf="${-id}">🛠 Popular fits</button>`;
+      $('#kb-zk-link').innerHTML = `<a href="https://zkillboard.com/ship/${-id}/" target="_blank" rel="noopener">Open on zKillboard ↗</a>`;
+    } else
     $('#kb-header').innerHTML = `<img class="char-portrait" src="${portrait(id)}" alt="">
       <div><div class="char-name">${esc(c?.name || '')}</div>
       <div class="char-corp">${esc(info.corp || '')}${info.alliance ? ' · ' + esc(info.alliance) : ''}</div></div>`;
-    $('#kb-zk-link').innerHTML = `<a href="https://zkillboard.com/character/${id}/" target="_blank" rel="noopener">Open on zKillboard ↗</a>`;
+    if (id > 0) $('#kb-zk-link').innerHTML = `<a href="https://zkillboard.com/character/${id}/" target="_blank" rel="noopener">Open on zKillboard ↗</a>`;
     const s = this.zkStats.get(id);
     if (!s) $('#kb-stats').innerHTML = '<div class="empty">Loading…</div>';
     else if (s._err) $('#kb-stats').innerHTML = `<div class="empty">zKillboard stats unavailable: ${esc(s._err)}</div>`;
@@ -1411,8 +1504,10 @@ const KB = {
       $('#kb-stats').innerHTML = box('Kills', fmtNum(k), 'green') + box('Losses', fmtNum(l), 'red')
         + box('K/D', l ? (k / l).toFixed(2) : (k ? '∞' : '—'), 'teal') + box('ISK destroyed', fmtISK(iD), 'gold')
         + box('ISK lost', fmtISK(iL)) + box('ISK efficiency', eff + '%', eff >= 50 ? 'green' : 'red')
-        + box('Solo kills', fmtNum(s.soloKills || 0), 'purple') + box('Danger', (s.dangerRatio ?? '—') + '%', 'orange')
-        + box('Gang', (s.gangRatio ?? '—') + '%', 'teal');
+        + box('Solo kills', fmtNum(s.soloKills || 0), 'purple')
+        + (s.dangerRatio != null ? box('Danger', s.dangerRatio + '%', 'orange') : '')
+        + (s.gangRatio != null ? box('Gang', s.gangRatio + '%', 'teal') : '')
+        + (id < 0 ? `<div class="cls muted" style="grid-column:1/-1;flex-basis:100%">All-time totals from zKillboard. The lists below come from the recent killmails downloaded here.</div>` : '');
     }
     this.renderFeed();
   },
@@ -1442,6 +1537,7 @@ const KB = {
       need.push(km.v[0], km.v[1], km.sys, km.v[3]);
       const fb = km.a.find(a => a[2]); if (fb) need.push(fb[0], fb[1]);
       need.push(this.myShipOn(km));
+      if (this.charId < 0) { const a = km.a.find(x => x[1] === -this.charId); if (a) need.push(a[0]); }
     }
     return need;
   },
@@ -1450,11 +1546,12 @@ const KB = {
         const vName = km.v[0] ? (Names.name(km.v[0]) || '…') : (Names.name(km.v[1]) || 'Structure/NPC');
         const mine = this.myShipOn(km);
         const pilot = (id, nm) => id ? `<span class="pilot" data-pilot="${id}">${esc(nm || Names.name(id) || '…')}</span>` : esc(nm || '');
+        const pilotIn = this.charId < 0 ? (km.a.find(a => a[1] === -this.charId && a[2]) || km.a.find(a => a[1] === -this.charId)) : null;
         const l1 = kind === 'kill'
           ? `☠ ${esc(Names.typeName(km.v[3]))} — ${pilot(km.v[0], vName)}`
-          : `💀 Lost ${esc(Names.typeName(km.v[3]))}`;
+          : this.charId < 0 ? `💀 ${esc(Names.typeName(km.v[3]))} lost — ${pilot(km.v[0], vName)}` : `💀 Lost ${esc(Names.typeName(km.v[3]))}`;
         const l2 = kind === 'kill'
-          ? `flying ${esc(Names.typeName(mine))} · ${km.a.length} on mail · ${esc(Names.name(km.sys) || '')}`
+          ? (pilotIn ? `${pilot(pilotIn[0], '')} in the ${esc(Names.typeName(mine))}` : `flying ${esc(Names.typeName(mine))}`) + ` · ${km.a.length} on mail · ${esc(Names.name(km.sys) || '')}`
           : `final blow ${pilot(fb[0], '')} (${esc(Names.typeName(fb[1]))}) · ${km.a.length} attackers · ${esc(Names.name(km.sys) || '')}`;
         return `<div class="kill-row" data-km="${km.id}"><div class="kill-dot ${kind === 'kill' ? 'win' : 'loss'}"></div>
           <img src="${typeIcon(km.v[3])}" alt="" loading="lazy">
@@ -1500,12 +1597,12 @@ const KB = {
   // ── Ships tab: one list, three views (ships killed / kills with / deaths in) ──
   renderShips() {
     const box = $('#ships-list');
-    if (!this.charId) { box.innerHTML = '<div class="empty">Pick a pilot above.</div>'; $('#ships-sum').textContent = ''; return; }
+    if (!this.charId) { box.innerHTML = '<div class="empty">Pick a pilot or ship above.</div>'; $('#ships-sum').textContent = ''; return; }
     const mode = $('#ships-mode .on').dataset.v;
     const grouped = $('#ships-group .on').dataset.v === 'group';
     const f = this.filters('ships');
     const q = $('#ships-search').value.trim().toLowerCase();
-    const who = esc(this.current()?.name || 'This pilot');
+    const who = esc(this.current()?.name || (this.isShip() ? Names.typeName(this.ship()) : 'This pilot'));
     let rows, need = [];
     if (mode === 'killed') {
       const { rows: vr, total } = this.victimStats(f);
@@ -1519,7 +1616,7 @@ const KB = {
         .map(r => ({ type: r.type, n: mode === 'kills' ? r.kills : r.deaths, isk: mode === 'kills' ? r.iskK : r.iskL, r }));
       const tk = all.reduce((s, r) => s + r.kills, 0), td = all.reduce((s, r) => s + r.deaths, 0);
       $('#ships-sum').textContent = `${fmtNum(tk)} kills · ${fmtNum(td)} deaths · ${all.length} hulls`;
-      $('#ships-hint').innerHTML = `Each row is a ship ${who} <b>flew</b>. Tap one to see what it killed and what it died to, then tap an entry to open those killmails.`;
+      $('#ships-hint').innerHTML = this.isShip() ? `Tap the ${who} to see every ship type it <b>killed</b> and <b>died to</b> in the downloaded killmails, then tap an entry to open them.` : `Each row is a ship ${who} <b>flew</b>. Tap one to see what it killed and what it died to, then tap an entry to open those killmails.`;
       need = all.flatMap(r => [r.type, ...r.killed.keys(), ...r.diedTo.keys()]);
     }
     if (q) rows = rows.filter(x => Names.typeName(x.type).toLowerCase().includes(q) || Names.typeClass(x.type).toLowerCase().includes(q));
@@ -1566,7 +1663,7 @@ const KB = {
   // ── Habits: when, where, with whom ──
   async renderHabits() {
     const set = (id, h) => $('#' + id).innerHTML = h;
-    if (!this.charId) { set('hab-body', '<div class="empty">Pick a pilot above.</div>'); return; }
+    if (!this.charId) { set('hab-body', '<div class="empty">Pick a pilot or ship above.</div>'); return; }
     if (!this.kms.size) { set('hab-body', '<div class="empty">No killmails cached yet — sync this pilot.</div>'); return; }
     const f = this.filters('habits');
     const ms = this.mails(f);
@@ -1634,7 +1731,7 @@ const KB = {
           <div class="card" style="margin:0"><div class="card-title">Fleet size on kills</div>
             ${['Solo (1)', '2–5', '6–10', '11–30', '31+'].map((lbl, i) => `<div class="hrow"><span style="width:62px">${lbl}</span><div class="bar grow" style="margin:0 8px"><div class="k" style="width:${pct(fleet[i])}%"></div></div><span style="width:40px;text-align:right">${pct(fleet[i])}%</span></div>`).join('')}
             <div class="cls muted" style="margin-top:6px">Average ${kills ? (fleetSum / kills).toFixed(1) : '—'} pilots on their kills</div></div>
-          <div class="card" style="margin:0"><div class="card-title">Flies with most</div>
+          <div class="card" style="margin:0"><div class="card-title">${me < 0 ? 'Pilots on its kills' : 'Flies with most'}</div>
             ${topList(wing, 10).map(([id, w]) => `<div class="hrow"><span class="grow"><span class="pilot" data-pilot="${id}">${esc(Names.name(id) || '…')}</span> <span class="muted">${esc(topShip(w.ships))}</span></span><span>${w.n} <span class="muted">(${pct(w.n)}%)</span></span></div>`).join('') || '<div class="empty">Nobody — flies solo.</div>'}</div>
           <div class="card" style="margin:0"><div class="card-title">Killed by most</div>
             ${topList(nem, 10).map(([id, x]) => `<div class="hrow"><span class="grow"><span class="pilot" data-pilot="${id}">${esc(Names.name(id) || '…')}</span> <span class="muted">${esc(topShip(x.ships))}</span></span><span>${x.n}${x.fb ? ` <span class="muted">(${x.fb} FB)</span>` : ''}</span></div>`).join('') || '<div class="empty">No losses to players.</div>'}</div>
@@ -2457,7 +2554,7 @@ const KMV = {
   render(km, z) {
     setTimeout(() => { const g = $('#km-body .throw-grip'); if (g) { const v = km.victim || {}; PCL.attachThrow(g, g.closest('.card'), () => ({ title: `${Names.typeName(v.ship_type_id)} (killmail)`, eft: this.lastEFT })); } }, 0);
     const v = km.victim || {}, me = KB.charId;
-    const isLoss = v.character_id === me, isKill = !isLoss && (km.attackers || []).some(a => a.character_id === me);
+    const isLoss = me < 0 ? v.ship_type_id === -me : v.character_id === me, isKill = !isLoss && (km.attackers || []).some(a => me < 0 ? a.ship_type_id === -me : a.character_id === me);
     const nm = id => id ? (Names.name(id) || '…') : '';
     const pilot = id => id ? `<span class="pilot" data-pilot="${id}">${esc(nm(id))}</span>` : '';
     const sec = this.sec.get(km.solar_system_id);
@@ -4423,7 +4520,7 @@ const CS = {
 //  BACKUP — what moves between devices (never logins, never the PC link code)
 // ════════════════════════════════════════════════════════════════
 const BACKUP = {
-  KEYS: ['settings', 'tracked', 'kbSelected', 'plans', 'activePlan', 'ui', 'charsets', 'fits', 'fitsInbox', 'skillChar'],
+  KEYS: ['settings', 'tracked', 'ships', 'kbSelected', 'plans', 'activePlan', 'ui', 'charsets', 'fits', 'fitsInbox', 'skillChar'],
   // logins: only for the encrypted device-to-device sync, never in downloaded files
   collect({ logins = false } = {}) {
     const data = {}; for (const k of this.KEYS) { const v = LS.get(KEYS[k], undefined); if (v !== undefined) data[KEYS[k]] = v; }
@@ -4509,7 +4606,16 @@ function wire() {
   };
 
   // char bar
-  $('#kb-char').onchange = e => KB.select(e.target.value);
+  $('#kb-char').onchange = e => { if (e.target.value) KB.select(e.target.value); };
+  $('#kb-ship').onchange = e => { if (e.target.value) KB.select(-e.target.value); };
+  $('#kb-ship-btn').onclick = () => KB.addShipByName($('#kb-ship-add').value);
+  $('#kb-ship-add').onkeydown = e => { if (e.key === 'Enter') KB.addShipByName($('#kb-ship-add').value); };
+  $('#kb-ship-add').onchange = e => { if (KB.findShip(e.target.value)?.name.toLowerCase() === e.target.value.trim().toLowerCase()) KB.addShipByName(e.target.value); }; // picked from the suggestions
+  $('#kb-ship-star').onclick = () => {
+    if (!KB.isShip()) return;
+    const t = KB.ships(), c = t.find(x => x.id === KB.ship()); if (!c) return;
+    c.star = !c.star; KB.saveShips(t); KB.renderSelector();
+  };
   $('#kb-add-btn').onclick = () => KB.addByName($('#kb-add').value);
   $('#kb-add').onkeydown = e => { if (e.key === 'Enter') KB.addByName($('#kb-add').value); };
   $('#kb-star').onclick = () => {
@@ -4524,7 +4630,8 @@ function wire() {
   };
   $('#kb-remove').onclick = () => {
     const c = KB.current(); if (!c || !confirm(`Remove ${c.name} from the list? Cached killmails are kept.`)) return;
-    Sync.stop(c.id);
+    Sync.stop(KB.charId);
+    if (KB.isShip()) { LS.set(KEYS.ships, KB.ships().filter(x => x.id !== c.id)); KB.select(KB.tracked()[0]?.id || null); return; }
     KB.saveTracked(KB.tracked().filter(x => x.id !== c.id));
     const next = KB.tracked()[0];
     KB.select(next ? (next.id ?? 'n:' + next.name) : null);
@@ -4719,11 +4826,17 @@ function wire() {
   const t = KB.tracked();
   KB.renderSelector();
   UI.show(startPage);
-  const first = t.find(x => x.id === sel) || t.find(x => x.star) || t[0];
-  if (first) KB.select(first.id ?? 'n:' + first.name);
+  if (sel < 0 && KB.ships().some(x => x.id === -sel)) KB.select(sel);
+  else {
+    const first = t.find(x => x.id === sel) || t.find(x => x.star) || t[0];
+    if (first) KB.select(first.id ?? 'n:' + first.name);
+  }
   // Keep tracked (★) pilots up to date in the background.
   if (Object.keys(SSO.chars()).length) setTimeout(() => TRAIN.loadAll(), 1500); // red/orange dot on Skills if a queue lapsed or ends soon
-  setTimeout(async () => { for (const c of KB.tracked().filter(x => x.star && x.id && x.id !== KB.charId)) await Sync.run(c.id, { full: true }); }, 4000);
+  setTimeout(async () => {
+    for (const c of KB.tracked().filter(x => x.star && x.id && x.id !== KB.charId)) await Sync.run(c.id, { full: true });
+    for (const c of KB.ships().filter(x => x.star && -x.id !== KB.charId)) await Sync.run(-c.id, { full: false }); // favorite ships: pick up new kills
+  }, 4000);
 })();
 </script>
 </body>
