@@ -377,6 +377,11 @@
       <label><input type="checkbox" class="f-solo"> Solo only</label>
       <span class="seg" id="hab-tz"><button data-v="eve" class="on">EVE time</button><button data-v="local">My time</button></span>
     </div>
+    <div class="filter-row" style="margin:8px 0 0">
+      <label class="muted" style="font-size:12px">Where</label>
+      <select id="hab-where" style="flex:1 1 200px;max-width:320px"></select>
+      <span id="hab-where-pick" class="row" style="display:none;flex:1 1 260px"><input id="hab-where-q" class="grow" type="text" placeholder="System, constellation or region" autocomplete="off"><button class="btn sm" id="hab-where-go">Go</button></span>
+    </div>
   </div>
   <div id="hab-body"></div>
 </div>
@@ -828,7 +833,8 @@ const KEYS = {
   ssoChars: 'eft.sso.characters.v1',    // { [charId]: { id, name, refresh, access, exp, scopes, needsLogin } }
   skillChar: 'eft.skills.activeChar.v1',
   tracked: 'eft.kb.tracked.v1',         // [{ id, name, star, added }]
-  ships: 'eft.kb.ships.v1',             // [{ id: shipTypeId, name, star, viewed }] — ship lookups on the killboard
+  ships: 'eft.kb.ships.v1',
+  geo: 'eft.geo.v1',                    // { con: {id: [systems]}, reg: {id: [systems]} } — fixed map data, cached (not backed up)             // [{ id: shipTypeId, name, star, viewed }] — ship lookups on the killboard
   kbSelected: 'eft.kb.selected.v1',
   plans: 'eft.plans.v1',                // { schema, plans: [...] }
   charsets: 'eft.charsets.v1',          // { schema, groups: [...], chars: [...] }
@@ -1225,6 +1231,52 @@ const Sync = {
 };
 
 // ════════════════════════════════════════════════════════════════
+//  GEO — "where" filters for Habits: a system, constellation, region or faction-warfare warzone.
+//  Map data never changes, so system lists are cached; warzone ownership is live from ESI.
+// ════════════════════════════════════════════════════════════════
+const GEO = {
+  WZ: { am: { name: 'Amarr – Minmatar warzone', f: [500003, 500002] }, cg: { name: 'Caldari – Gallente warzone', f: [500001, 500004] } },
+  FAC: { 500001: 'Caldari', 500002: 'Minmatar', 500003: 'Amarr', 500004: 'Gallente' },
+  sets: new Map(), fw: null, fwAt: 0,
+  where() { return LS.get(KEYS.ui, {}).habWhere || null; },
+  setWhere(w) { const ui = LS.get(KEYS.ui, {}); if (w) ui.habWhere = w; else delete ui.habWhere; LS.set(KEYS.ui, ui); },
+  key: w => `${w.kind}:${w.id}`,
+  async fwSystems() {
+    if (!this.fw || Date.now() - this.fwAt > 30 * 60e3) { this.fw = await ESI.req('/fw/systems/'); this.fwAt = Date.now(); }
+    return this.fw;
+  },
+  async systemsFor(w) {
+    const k = this.key(w); if (this.sets.has(k)) return this.sets.get(k);
+    const c = LS.get(KEYS.geo, {}); c.con ||= {}; c.reg ||= {};
+    const con = async id => c.con[id] ||= (await ESI.req(`/universe/constellations/${id}/`)).systems || [];
+    let ids = [];
+    if (w.kind === 'system') ids = [w.id];
+    else if (w.kind === 'constellation') ids = await con(w.id);
+    else if (w.kind === 'region') {
+      if (!c.reg[w.id]) { const r = await ESI.req(`/universe/regions/${w.id}/`); const all = []; for (const cid of r.constellations || []) all.push(...await con(cid)); c.reg[w.id] = all; }
+      ids = c.reg[w.id];
+    } else if (w.kind === 'wz') ids = (await this.fwSystems()).filter(x => this.WZ[w.id].f.includes(x.owner_faction_id)).map(x => x.solar_system_id);
+    if (w.kind === 'constellation' || w.kind === 'region') LS.set(KEYS.geo, c);
+    const set = new Set(ids); this.sets.set(k, set); return set;
+  },
+  async resolve(name) {
+    const r = await ESI.req('/universe/ids/', { method: 'POST', body: [name.trim()] });
+    const lc = name.trim().toLowerCase();
+    for (const [kind, list] of [['system', r?.systems], ['constellation', r?.constellations], ['region', r?.regions]]) {
+      const hit = (list || []).find(x => x.name.toLowerCase() === lc) || (list || [])[0];
+      if (hit) return { kind, id: hit.id, name: hit.name };
+    }
+    return null;
+  },
+  renderSelect() {
+    const w = this.where(), sel = $('#hab-where');
+    const custom = w && w.kind !== 'wz' ? `<option value="cur">📍 ${esc(w.name)} (${w.kind})</option>` : '';
+    sel.innerHTML = `<option value="">Anywhere</option><optgroup label="Faction warfare">${Object.entries(this.WZ).map(([id, z]) => `<option value="wz:${id}">⚔ ${z.name}</option>`).join('')}</optgroup>${custom}<option value="pick">📍 Pick a system / constellation / region…</option>`;
+    sel.value = !w ? '' : w.kind === 'wz' ? 'wz:' + w.id : 'cur';
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
 //  KILLBOARD VIEW (shared character selector)
 // ════════════════════════════════════════════════════════════════
 const KB = {
@@ -1439,6 +1491,7 @@ const KB = {
       days: +($('.f-period', root)?.value || 0),
       pods: !!$('.f-pods', root)?.checked,
       solo: !!$('.f-solo', root)?.checked,
+      sys: page === 'habits' && GEO.where() ? GEO.sets.get(GEO.key(GEO.where())) || null : null,
     };
   },
   classify(km) {
@@ -1453,6 +1506,7 @@ const KB = {
     const out = [];
     for (const km of this.kms.values()) {
       if (since && km.t < since) continue;
+      if (f.sys && !f.sys.has(km.sys)) continue;
       const kind = this.classify(km);
       if (!kind) continue;
       const z = this.st?.list[km.id] || [];
@@ -1787,8 +1841,15 @@ const KB = {
     const set = (id, h) => $('#' + id).innerHTML = h;
     if (!this.charId) { set('hab-body', '<div class="empty">Pick a pilot or ship above.</div>'); return; }
     if (!this.kms.size) { set('hab-body', '<div class="empty">No killmails cached yet — sync this pilot.</div>'); return; }
+    const w = GEO.where();
+    if (w && !GEO.sets.has(GEO.key(w))) {
+      set('hab-body', `<div class="empty">Loading ${esc(w.name)}…</div>`);
+      GEO.systemsFor(w).then(() => this.renderHabits()).catch(e => set('hab-body', `<div class="empty">Couldn't load ${esc(w.name)}: ${esc(e.message)}</div>`));
+      return;
+    }
     const f = this.filters('habits');
     const ms = this.mails(f);
+    const wz = w?.kind === 'wz' ? GEO.fw : null, fwBy = wz ? new Map(wz.map(x => [x.solar_system_id, x])) : null;
     const me = this.charId;
     const local = $('#hab-tz .on').dataset.v === 'local';
     const off = local ? -new Date().getTimezoneOffset() / 60 : 0;
@@ -1828,7 +1889,7 @@ const KB = {
     }
     const hh = h => String(h % 24).padStart(2, '0') + ':00';
     const tzName = local ? `your time (UTC${off >= 0 ? '+' : ''}${off})` : 'EVE time (UTC)';
-    $('#hab-sum').textContent = `${fmtNum(kills)} kills · ${fmtNum(losses)} losses`;
+    $('#hab-sum').textContent = `${fmtNum(kills)} kill${kills === 1 ? '' : 's'} · ${fmtNum(losses)} loss${losses === 1 ? '' : 'es'}`;
     const maxH = Math.max(1, ...hk.map((v, i) => v + hl[i]));
     const bars = (k, l, labels, max) => `<div class="hbars">${k.map((v, i) => `<div class="hcol" title="${labels[i]}: ${v} kills, ${l[i]} losses">
         <div class="hstack"><div class="hl" style="height:${l[i] / max * 100}%"></div><div class="hk" style="height:${v / max * 100}%"></div></div>
@@ -1848,8 +1909,11 @@ const KB = {
           <div class="cls muted" style="margin:4px 0 10px"><span class="green">■</span> kills <span class="red">■</span> losses · tap a bar for numbers</div>
           ${bars(dk, dl, days, maxD)}</div>
         <div class="km-grid">
-          <div class="card" style="margin:0"><div class="card-title">Where (top systems)</div>
-            ${sysRows.map(([id, s]) => `<div class="hrow"><span class="grow">${esc(Names.name(id) || '…')}</span><span class="green">${s.k}</span>&nbsp;/&nbsp;<span class="red">${s.l}</span></div>`).join('') || '<div class="empty">—</div>'}</div>
+          <div class="card" style="margin:0"><div class="card-title">Where (top systems${w ? ' in ' + esc(w.name) : ''})</div>
+            ${wz ? (() => { const n = {}; for (const x of wz) if (GEO.WZ[w.id].f.includes(x.owner_faction_id)) n[x.occupier_faction_id] = (n[x.occupier_faction_id] || 0) + 1;
+              return `<div class="cls" style="margin-bottom:6px">Held right now: ${Object.entries(n).map(([fid, c]) => `${esc(GEO.FAC[fid] || 'Faction ' + fid)} ${c}`).join(' · ')} systems</div>`; })() : ''}
+            ${sysRows.map(([id, s]) => { const x = fwBy?.get(id); const pct = x && x.victory_points_threshold ? Math.round(x.victory_points / x.victory_points_threshold * 100) : 0;
+              return `<div class="hrow"><span class="grow">${esc(Names.name(id) || '…')}${x ? ` <span class="muted" title="${esc(x.contested)}">${esc(GEO.FAC[x.occupier_faction_id] || '')}${x.contested !== 'uncontested' ? ` · ${pct}% ${esc(x.contested)}` : ''}</span>` : ''}</span><span class="green">${s.k}</span>&nbsp;/&nbsp;<span class="red">${s.l}</span></div>`; }).join('') || `<div class="empty">${w ? 'No kills or losses there.' : '—'}</div>`}</div>
           <div class="card" style="margin:0"><div class="card-title">Fleet size on kills</div>
             ${['Solo (1)', '2–5', '6–10', '11–30', '31+'].map((lbl, i) => `<div class="hrow"><span style="width:62px">${lbl}</span><div class="bar grow" style="margin:0 8px"><div class="k" style="width:${pct(fleet[i])}%"></div></div><span style="width:40px;text-align:right">${pct(fleet[i])}%</span></div>`).join('')}
             <div class="cls muted" style="margin-top:6px">Average ${kills ? (fleetSum / kills).toFixed(1) : '—'} pilots on their kills</div></div>
@@ -4927,6 +4991,24 @@ function wire() {
   segs('#ships-mode', () => { KB.open.ships = null; const ui = LS.get(KEYS.ui, {}); ui.shipsMode = $('#ships-mode .on').dataset.v; LS.set(KEYS.ui, ui); KB.renderShips(); });
   segs('#ships-group', () => KB.renderShips());
   segs('#hab-tz', () => KB.renderHabits());
+  GEO.renderSelect();
+  $('#hab-where').onchange = e => {
+    const v = e.target.value;
+    $('#hab-where-pick').style.display = v === 'pick' ? '' : 'none';
+    if (v === 'pick') { $('#hab-where-q').focus(); return; }
+    if (v === 'cur') return;
+    GEO.setWhere(v ? { kind: 'wz', id: v.slice(3), name: GEO.WZ[v.slice(3)].name } : null);
+    KB.renderHabits();
+  };
+  const pickWhere = async () => {
+    const q = $('#hab-where-q').value; if (!q.trim()) return;
+    $('#hab-sum').textContent = `Looking up "${q.trim()}"…`;
+    let r = null; try { r = await GEO.resolve(q); } catch (e) { flash('Lookup failed: ' + e.message, true); }
+    if (!r) { $('#hab-sum').textContent = `No system, constellation or region called "${q.trim()}".`; return; }
+    GEO.setWhere(r); $('#hab-where-q').value = ''; $('#hab-where-pick').style.display = 'none'; GEO.renderSelect(); KB.renderHabits();
+  };
+  $('#hab-where-go').onclick = pickWhere;
+  $('#hab-where-q').onkeydown = e => { if (e.key === 'Enter') pickWhere(); };
   for (const pg of ['ships', 'habits']) {
     $$(`#page-${pg} .f-period, #page-${pg} .f-pods, #page-${pg} .f-solo`).forEach(el => el.onchange = () => KB.renderAll());
   }
