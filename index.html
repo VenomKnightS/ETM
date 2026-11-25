@@ -1942,6 +1942,7 @@ const KB = {
   renderH2H() {
     const box = $('#ships-list'), me = this.ship(), f = this.filters('ships');
     const q = $('#ships-search').value.trim().toLowerCase(), grouped = $('#ships-group .on').dataset.v === 'group';
+    const pct = r => r.w + r.l ? Math.round(r.w / (r.w + r.l) * 100) : 0;
     const m = new Map(), allW = new Map();
     const get = t => { let r = m.get(t); if (!r) m.set(t, r = { type: t, w: 0, l: 0, fb: 0, weap: new Map() }); return r; };
     let kills = 0, losses = 0;
@@ -1957,13 +1958,16 @@ const KB = {
         if (fb?.[1] && m.has(fb[1])) m.get(fb[1]).fb++;
       }
     }
-    let rows = [...m.values()].filter(r => r.type);
+    // Same hull vs itself can't be scored (a Rifter killing a Rifter is also a Rifter loss), and capsules aren't matchups.
+    let rows = [...m.values()].filter(r => r.type && r.type !== me && !CAPSULES.has(r.type));
     if (q) rows = rows.filter(r => Names.typeName(r.type).toLowerCase().includes(q) || Names.typeClass(r.type).toLowerCase().includes(q));
-    rows.sort((a, b) => (b.w + b.l) - (a.w + a.l) || b.w - a.w);
-    const who = esc(Names.typeName(me)), pct = r => Math.round(r.w / (r.w + r.l) * 100);
+    const sortBy = LS.get(KEYS.ui, {}).h2hSort === 'deaths' ? 'deaths' : 'kills';
+    if (sortBy === 'deaths') rows.sort((a, b) => b.l - a.l || pct(a) - pct(b) || a.w - b.w);
+    else rows.sort((a, b) => b.w - a.w || pct(b) - pct(a) || a.l - b.l);
+    const who = esc(Names.typeName(me));
     const topW = [...allW].sort((a, b) => b[1] - a[1]), totW = topW.reduce((s, x) => s + x[1], 0);
     $('#ships-sum').textContent = `${fmtNum(kills)} kills · ${fmtNum(losses)} losses · ${rows.length} ship types met`;
-    $('#ships-hint').innerHTML = `<b>Win %</b> = how often the ${who} killed that ship type ÷ (those kills + ${who} losses that type was on). Turn on <b>Solo only</b> for true 1-v-1s; gang fights blur it. Small counts are greyed.`
+    $('#ships-hint').innerHTML = `<span class="seg" style="margin-bottom:6px"><button data-h2hsort="kills" class="${sortBy === 'kills' ? 'on' : ''}">Most killed</button><button data-h2hsort="deaths" class="${sortBy === 'deaths' ? 'on' : ''}">Most died to</button></span><br><b>Win %</b> = how often the ${who} killed that ship type ÷ (those kills + ${who} losses that type was on). ${who} vs ${who} and capsules are left out. Turn on <b>Solo only</b> for true 1-v-1s; gang fights blur it. Small counts are greyed.`
       + (topW.length ? `<div style="margin-top:4px">How it kills: ${topW.slice(0, 6).map(([w, n]) => `${esc(Names.typeName(w))} ${Math.round(n / totW * 100)}%`).join(' · ')}</div>` : '');
     const rowHTML = r => {
       const n = r.w + r.l, p = pct(r), open = this.open.ships === r.type, thin = n < 3;
@@ -1983,7 +1987,8 @@ const KB = {
     else {
       const g = new Map();
       for (const r of rows) { const c = Names.typeClass(r.type) || 'Other'; if (!g.has(c)) g.set(c, []); g.get(c).push(r); }
-      box.innerHTML = [...g.entries()].map(([c, rs]) => {
+      const gk = sortBy === 'deaths' ? 'l' : 'w';
+      box.innerHTML = [...g.entries()].sort((a, b) => b[1].reduce((s, r) => s + r[gk], 0) - a[1].reduce((s, r) => s + r[gk], 0)).map(([c, rs]) => {
         const w = rs.reduce((s, r) => s + r.w, 0), l = rs.reduce((s, r) => s + r.l, 0);
         return `<div class="group-hdr"><span>${esc(c)}</span><span>${w + l ? Math.round(w / (w + l) * 100) : 0}% · ${fmtNum(w)}–${fmtNum(l)}</span></div>` + rs.map(rowHTML).join('');
       }).join('');
@@ -2020,7 +2025,7 @@ const KB = {
       need = vr.flatMap(r => [r.type, ...r.by.keys()]);
     } else if (ship) {
       const r = this.shipStats(f)[0];
-      rows = r ? [...r.diedTo.entries()].map(([t, d]) => ({ type: t, n: d.n, isk: 0, fb: d.fb, r })) : [];
+      rows = r ? [...r.diedTo.entries()].filter(([t]) => t !== this.ship() && !CAPSULES.has(t)).map(([t, d]) => ({ type: t, n: d.n, isk: 0, fb: d.fb, r })) : [];
       $('#ships-sum').textContent = `${fmtNum(r?.deaths || 0)} losses · ${rows.length} enemy ship types`;
       $('#ships-hint').innerHTML = `Each row is a ship type that was on a ${who} <b>loss</b> — how many ${who} losses it was on, and how many final blows it landed. Tap one to open those losses.`;
       need = rows.map(x => x.type);
@@ -5242,6 +5247,7 @@ function wire() {
   const segs = (id, fn) => $(id).onclick = e => { const b = e.target.closest('button'); if (!b) return; $$(id + ' button').forEach(x => x.classList.toggle('on', x === b)); fn(); };
   segs('#ships-mode', () => { KB.open.ships = null; const ui = LS.get(KEYS.ui, {}); ui.shipsMode = $('#ships-mode .on').dataset.v; LS.set(KEYS.ui, ui); KB.renderShips(); });
   segs('#ships-group', () => KB.renderShips());
+  $('#ships-hint').addEventListener('click', e => { const b = e.target.closest('[data-h2hsort]'); if (!b) return; const ui = LS.get(KEYS.ui, {}); ui.h2hSort = b.dataset.h2hsort; LS.set(KEYS.ui, ui); KB.renderShips(); });
   segs('#hab-tz', () => KB.renderHabits());
   GEO.renderSelect();
   $('#hab-where').onchange = e => {
