@@ -9,6 +9,8 @@ your Windows clipboard, ready to paste into Pyfa or EVE's fitting window (Import
   • Intel: with "Send EVE local / d-scan to my phone" on, copying the local member list or a d-scan in EVE
     sends it to the phone's 📡 Intel tab. Only text that looks like local or a d-scan is sent, and by default
     only when an EVE window is in front.
+  • Kill database (🗄 button): downloads EVE Ref's daily killmail archives into a folder you choose and
+    answers the phone's Head to head questions from it (lifetime data, without hammering zKillboard).
   • Optional password: set one here (Password… button) and any device can link by typing the
     password instead of the code — this helper keeps the code posted, locked with the password.
   • Messages travel through the free ntfy.sh relay, compressed and encrypted with keys derived
@@ -23,7 +25,7 @@ import urllib.request, urllib.error
 from pathlib import Path
 
 APP = 'EVE Tiles Mobile PC Link'
-VERSION = '1.4'
+VERSION = '1.5'
 RELAY = os.environ.get('ETM_RELAY', 'https://ntfy.sh').rstrip('/')
 SALT, ITER = b'etm-pclink-v1', 150000
 ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'  # no 0/O, 1/I/L
@@ -303,7 +305,11 @@ class Listener(threading.Thread):
                         if body is None:
                             continue
                         try:
-                            self.on_message(json.loads(decrypt(body.strip(), self.enc, self.mac)), self.since)
+                            msg = json.loads(decrypt(body.strip(), self.enc, self.mac))
+                            if msg.get('k') == 'q':  # a question for the kill database: answered here, not shown
+                                threading.Thread(target=answer_query, args=(load_config(), msg), daemon=True).start()
+                                continue
+                            self.on_message(msg, self.since)
                         except Exception as e:
                             self.on_status('warn', f'Ignored a message that could not be read ({e})')
             except Exception as e:
@@ -313,6 +319,216 @@ class Listener(threading.Thread):
                 self.on_status('offline', f'Can\'t reach {RELAY} — retrying in {backoff}s. ({e.__class__.__name__}: {why})')
                 self.stop.wait(backoff)
                 backoff = min(60, backoff * 2)
+
+# ── Kill database ──────────────────────────────────────────────────────────────────────
+# History comes from EVE Ref (data.everef.net/killmails): one .tar.bz2 per day, each killmail a verbatim ESI JSON.
+# Stored compactly: one row per killmail + one row per (killmail, attacking hull) — enough for head-to-head + weapons.
+import sqlite3, tarfile, tempfile, datetime as _dt
+EVEREF = os.environ.get('ETM_EVEREF', 'https://data.everef.net/killmails').rstrip('/')
+DB_FILE = 'etm_kills.sqlite'
+CAPSULES = {670, 33328}
+
+def _http(url, timeout=60):
+    req = urllib.request.Request(url, headers={'User-Agent': f'etm-pc-link/{VERSION} (EVE Tiles Mobile kill database)'})
+    return urllib.request.urlopen(req, timeout=timeout)
+
+class KillDB:
+    def __init__(self, folder):
+        self.folder = Path(folder); self.folder.mkdir(parents=True, exist_ok=True)
+        self.path = self.folder / DB_FILE
+        self.lock = threading.Lock()
+        self.db = sqlite3.connect(str(self.path), check_same_thread=False)
+        self.db.executescript("""
+            PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
+            CREATE TABLE IF NOT EXISTS km (id INTEGER PRIMARY KEY, t INTEGER, sys INTEGER, v INTEGER, vp INTEGER, solo INTEGER);
+            CREATE TABLE IF NOT EXISTS att (km INTEGER, ship INTEGER, wep INTEGER, fb INTEGER, n INTEGER, npc INTEGER, PRIMARY KEY (km, ship, npc)) WITHOUT ROWID;
+            CREATE INDEX IF NOT EXISTS att_ship ON att (ship, km);
+            CREATE INDEX IF NOT EXISTS km_v ON km (v, t);
+            CREATE TABLE IF NOT EXISTS days (day TEXT PRIMARY KEY, n INTEGER, stored INTEGER, at INTEGER);
+        """)
+
+    def add(self, j):
+        """Adds one ESI killmail (caller holds the lock). Returns True if it was new."""
+        kid = j.get('killmail_id')
+        if not kid:
+            return False
+        v = j.get('victim') or {}
+        atts = j.get('attackers') or []
+        try:
+            t = int(_dt.datetime.strptime(j['killmail_time'][:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=_dt.timezone.utc).timestamp() * 1000)
+        except Exception:
+            return False
+        solo = 1 if len(atts) == 1 and atts[0].get('character_id') else 0
+        cur = self.db.execute('INSERT OR IGNORE INTO km VALUES (?,?,?,?,?,?)', (kid, t, j.get('solar_system_id') or 0, v.get('ship_type_id') or 0, 1 if v.get('character_id') else 0, solo))
+        if not cur.rowcount:
+            return False
+        hulls = {}
+        for a in atts:
+            ship = a.get('ship_type_id')
+            if not ship:
+                continue
+            key = (ship, 0 if a.get('character_id') else 1)
+            h = hulls.setdefault(key, {'n': 0, 'fb': 0, 'w': {}})
+            h['n'] += 1
+            if a.get('final_blow'):
+                h['fb'] = 1
+            w = a.get('weapon_type_id')
+            if w and w != ship:
+                h['w'][w] = h['w'].get(w, 0) + 1
+        self.db.executemany('INSERT OR IGNORE INTO att VALUES (?,?,?,?,?,?)',
+                            [(kid, ship, max(h['w'], key=h['w'].get) if h['w'] else 0, h['fb'], h['n'], npc) for (ship, npc), h in hulls.items()])
+        return True
+
+    def stats(self):
+        with self.lock:
+            n, a, b = self.db.execute('SELECT COUNT(*), MIN(t), MAX(t) FROM km').fetchone()
+            days = self.db.execute('SELECT COUNT(*) FROM days').fetchone()[0]
+        return {'n': n or 0, 'from': a or 0, 'to': b or 0, 'days': days}
+
+    def h2h(self, ship, days=0, solo=False, npcs=False, limit=250):
+        """Head to head for one hull: per enemy hull — wins, losses, final blows, top weapons both ways."""
+        since = int((time.time() - days * 86400) * 1000) if days else 0
+        sf = ' AND k.solo = 1' if solo else ''
+        npc = '' if npcs else ' AND a.npc = 0'
+        q = self.db.execute
+        with self.lock:
+            wins = {r[0]: r[1] for r in q(f'SELECT k.v, COUNT(DISTINCT k.id) FROM att a JOIN km k ON k.id = a.km WHERE a.ship = ? AND k.t >= ?{sf}{npc} GROUP BY k.v', (ship, since))}
+            wwep = {}
+            for vv, w, c in q(f'SELECT k.v, a.wep, COUNT(*) FROM att a JOIN km k ON k.id = a.km WHERE a.ship = ? AND k.t >= ? AND a.wep > 0{sf}{npc} GROUP BY k.v, a.wep', (ship, since)):
+                wwep.setdefault(vv, []).append([w, c])
+            loss = {}
+            for s2, c, fb in q(f'SELECT a.ship, COUNT(DISTINCT k.id), SUM(a.fb) FROM km k JOIN att a ON a.km = k.id WHERE k.v = ? AND k.t >= ?{sf}{npc} GROUP BY a.ship', (ship, since)):
+                loss[s2] = (c, fb or 0)
+            lwep = {}
+            for s2, w, c in q(f'SELECT a.ship, a.wep, COUNT(*) FROM km k JOIN att a ON a.km = k.id WHERE k.v = ? AND k.t >= ? AND a.wep > 0{sf}{npc} GROUP BY a.ship, a.wep', (ship, since)):
+                lwep.setdefault(s2, []).append([w, c])
+            kills = q(f'SELECT COUNT(DISTINCT k.id) FROM att a JOIN km k ON k.id = a.km WHERE a.ship = ? AND k.t >= ?{sf}{npc}', (ship, since)).fetchone()[0]
+            losses = q(f'SELECT COUNT(*) FROM km k WHERE k.v = ? AND k.t >= ?{sf}', (ship, since)).fetchone()[0]
+            wk = q(f'SELECT a.wep, COUNT(*) FROM att a JOIN km k ON k.id = a.km WHERE a.ship = ? AND k.t >= ? AND a.wep > 0{sf}{npc} GROUP BY a.wep ORDER BY 2 DESC LIMIT 8', (ship, since)).fetchall()
+        top = lambda lst: sorted(lst or [], key=lambda x: -x[1])[:4]
+        rows = []
+        for t in set(wins) | set(loss):
+            if not t or t == ship or t in CAPSULES:
+                continue
+            w, (l, fb) = wins.get(t, 0), loss.get(t, (0, 0))
+            rows.append([t, w, l, fb, top(wwep.get(t)), top(lwep.get(t))])
+        rows.sort(key=lambda r: -(r[1] + r[2]))
+        return {'rows': rows[:limit], 'kills': kills, 'losses': losses, 'wk': [list(x) for x in wk], 'db': self.stats()}
+
+def everef_totals():
+    with _http(f'{EVEREF}/totals.json') as r:
+        raw = json.loads(r.read().decode())
+    out = {}
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                d = ''.join(ch for ch in str(k) if ch.isdigit())
+                if len(d) == 8 and isinstance(v, (int, float)):
+                    out[f'{d[:4]}-{d[4:6]}-{d[6:]}'] = int(v)
+                else:
+                    walk(v)
+    walk(raw)
+    return out
+
+_year_listing = {}
+def archive_url(day):
+    y = day[:4]
+    if y not in _year_listing:
+        try:
+            with _http(f'{EVEREF}/{y}/') as r:
+                html = r.read().decode('utf-8', 'replace')
+            _year_listing[y] = _re.findall(r'href="([^"]+?\.tar\.bz2)"', html)
+        except Exception:
+            _year_listing[y] = []
+    for h in _year_listing[y]:
+        name = h.split('/')[-1]
+        if day in name or day.replace('-', '') in name:
+            return h if h.startswith('http') else f'{EVEREF}/{y}/{name}'
+    return f'{EVEREF}/{y}/killmails-{day}.tar.bz2'
+
+class DBSync(threading.Thread):
+    """Downloads days newest-first (only days EVE Ref says changed) until the chosen range is covered."""
+    def __init__(self, kdb, days_back, on_progress):
+        super().__init__(daemon=True)
+        self.kdb, self.days_back, self.on_progress = kdb, days_back, on_progress
+        self.stop = threading.Event()
+    def run(self):
+        try:
+            totals = everef_totals()
+        except Exception as e:
+            self.on_progress('error', f"Can't reach EVE Ref ({e})"); return
+        first = (_dt.date.today() - _dt.timedelta(days=self.days_back)).isoformat() if self.days_back else '0000'
+        with self.kdb.lock:
+            have = {d: n for d, n in self.kdb.db.execute('SELECT day, n FROM days')}
+        todo = sorted((d for d, n in totals.items() if d >= first and n and have.get(d) != n), reverse=True)
+        if not todo:
+            self.on_progress('done', 'Up to date.'); return
+        failed = 0
+        for i, day in enumerate(todo):
+            if self.stop.is_set():
+                self.on_progress('paused', f'Paused — {i} of {len(todo)} days done.'); return
+            self.on_progress('busy', f'Downloading {day} ({i + 1} of {len(todo)} days)…')
+            tmp = None
+            try:
+                tmp = tempfile.NamedTemporaryFile(dir=self.kdb.folder, suffix='.tar.bz2', delete=False)
+                with _http(archive_url(day), timeout=300) as r, tmp:
+                    while True:
+                        b = r.read(1 << 16)
+                        if not b:
+                            break
+                        tmp.write(b)
+                added = 0
+                with tarfile.open(tmp.name, 'r:bz2') as tf, self.kdb.lock:
+                    for m in tf:
+                        if not m.isfile() or not m.name.endswith('.json'):
+                            continue
+                        try:
+                            if self.kdb.add(json.load(tf.extractfile(m))):
+                                added += 1
+                        except Exception:
+                            pass
+                    self.kdb.db.execute('INSERT OR REPLACE INTO days VALUES (?,?,?,?)', (day, totals[day], added, int(time.time())))
+                    self.kdb.db.commit()
+            except Exception as e:
+                failed += 1
+                self.on_progress('warn', f'{day}: {e} — will retry next time')
+            finally:
+                if tmp:
+                    try:
+                        os.unlink(tmp.name)
+                    except Exception:
+                        pass
+            self.stop.wait(0.3)  # gentle on EVE Ref
+        self.on_progress('done', f'Done — {len(todo) - failed} day(s) added' + (f', {failed} failed (retried next time)' if failed else '') + '.')
+
+_kdb = None
+def open_kdb(cfg):
+    global _kdb
+    folder = cfg.get('db_dir')
+    if not folder:
+        return None
+    if _kdb is None or str(_kdb.folder) != str(Path(folder)):
+        _kdb = KillDB(folder)
+    return _kdb
+
+def reply_topic(mac):
+    return 'etm-r-' + hmac.new(mac, b'reply', hashlib.sha256).digest()[:16].hex()
+
+def answer_query(cfg, m):
+    """Phone asked the kill database something (k='q'); answer on the reply channel."""
+    _, enc, mac = derive(cfg['code'])
+    out = {'k': 'r', 'qid': m.get('qid')}
+    try:
+        kdb = open_kdb(cfg)
+        if not kdb or not kdb.path.exists():
+            out['err'] = 'No kill database on your PC yet — open 🗄 Kill database in the PC helper and press Start.'
+        elif m.get('q') == 'h2h':
+            out.update(kdb.h2h(int(m['ship']), int(m.get('days') or 0), bool(m.get('solo')), bool(m.get('npcs'))))
+        else:
+            out['err'] = 'Unknown question.'
+    except Exception as e:
+        out['err'] = f'PC database error: {e}'
+    post_chunked(reply_topic(mac), encrypt(json.dumps(out, separators=(',', ':')), enc, mac))
 
 # ── Windows clipboard (persists after the app closes) ─────────────────────────────────
 def set_clipboard(text, tk_root=None):
@@ -519,7 +735,63 @@ def run_gui():
     mk(btns, 'Copy code', copy_code).pack(side='left', padx=4)
     mk(btns, 'Test connection', self_test).pack(side='left', padx=4)
     mk(btns, 'New code', regen).pack(side='left', padx=4)
+    def db_window():
+        from tkinter import filedialog
+        import datetime as dtm
+        w = tk.Toplevel(root); w.title(f'{APP} — Kill database'); w.configure(bg=BG); w.geometry('580x340')
+        tk.Label(w, text='🗄 Kill database', bg=BG, fg=TEAL, font=('Segoe UI', 13, 'bold')).pack(pady=(12, 2))
+        tk.Label(w, text="Daily killmail archives from EVE Ref, kept on this PC. Your phone's Head to head\n(🖥 PC database) asks it for answers — lifetime data without hammering zKillboard.",
+                 bg=BG, fg=DIM, font=('Segoe UI', 9), justify='center').pack()
+        row = tk.Frame(w, bg=BG); row.pack(fill='x', padx=14, pady=8)
+        dir_var = tk.StringVar(value=cfg.get('db_dir') or '(choose a folder — a big drive is best)')
+        tk.Label(row, textvariable=dir_var, bg=PANEL, fg=FG, font=font, anchor='w').pack(side='left', fill='x', expand=True, ipady=4)
+        def pick():
+            d = filedialog.askdirectory(parent=w, title='Folder for the kill database')
+            if d:
+                cfg['db_dir'] = d; save_config(cfg); dir_var.set(d); refresh()
+        tk.Button(row, text='Choose…', command=pick, bg=PANEL, fg=TEAL, relief='flat').pack(side='left', padx=6)
+        rng = tk.Frame(w, bg=BG); rng.pack()
+        tk.Label(rng, text='How far back:', bg=BG, fg=FG, font=font).pack(side='left')
+        spans = {'90 days': 90, '1 year': 365, '3 years': 1095, 'Everything (since 2007)': 0}
+        span_var = tk.StringVar(value=cfg.get('db_span') if cfg.get('db_span') in spans else '90 days')
+        tk.OptionMenu(rng, span_var, *spans).pack(side='left', padx=6)
+        stat_var, prog_var = tk.StringVar(), tk.StringVar()
+        tk.Label(w, textvariable=stat_var, bg=BG, fg=FG, font=font).pack(pady=(10, 0))
+        tk.Label(w, textvariable=prog_var, bg=BG, fg=DIM, font=('Segoe UI', 9), wraplength=540).pack()
+        def refresh():
+            kdb = open_kdb(cfg)
+            if not kdb:
+                stat_var.set('No folder chosen yet.'); return
+            st = kdb.stats()
+            day = lambda ms: dtm.datetime.utcfromtimestamp(ms / 1000).strftime('%Y-%m-%d') if ms else '—'
+            mb = kdb.path.stat().st_size / 1e6 if kdb.path.exists() else 0
+            stat_var.set(f"{st['n']:,} killmails · {day(st['from'])} → {day(st['to'])} · {st['days']} days · {mb:,.0f} MB")
+        def start():
+            if not cfg.get('db_dir'):
+                pick()
+                if not cfg.get('db_dir'):
+                    return
+            job = db_state.get('job')
+            if job and job.is_alive():
+                job.stop.set(); go.config(text='▶ Start'); return
+            cfg['db_span'] = span_var.get(); save_config(cfg)
+            def prog(kind, text):
+                def ui():
+                    prog_var.set(text); refresh()
+                    if kind in ('done', 'paused', 'error'):
+                        go.config(text='▶ Start')
+                try:
+                    w.after(0, ui)
+                except Exception:
+                    pass
+            db_state['job'] = DBSync(open_kdb(cfg), spans[span_var.get()], prog); db_state['job'].start(); go.config(text='⏸ Pause')
+        go = tk.Button(w, text='⏸ Pause' if db_state.get('job') and db_state['job'].is_alive() else '▶ Start', command=start, bg=PANEL, fg=TEAL, relief='flat', font=('Segoe UI', 11, 'bold'), padx=14)
+        go.pack(pady=10)
+        tk.Label(w, text='Press Start again any time to pick up new days — only days that changed are downloaded.\nClosing this window keeps it running; closing the PC helper stops it.', bg=BG, fg=DIM, font=('Segoe UI', 8)).pack()
+        refresh()
+    db_state = {}
     mk(btns, 'Password…', password).pack(side='left', padx=4)
+    mk(btns, '🗄 Kill database…', db_window).pack(side='left', padx=4)
     pw_var = tk.StringVar(); pw_label()
     tk.Label(root, textvariable=pw_var, bg=BG, fg=DIM, font=('Segoe UI', 9)).pack(before=hdr, pady=(6, 0))
     keep_code_posted(cfg, lambda k, s_: q.put(('status', k, s_)), threading.Event())
@@ -551,6 +823,16 @@ def main(argv):
         print('self-test OK'); return 0
     if '--decrypt' in argv:  # --decrypt CODE PAYLOAD  (debug helper)
         i = argv.index('--decrypt'); _, enc, mac = derive(argv[i + 1]); print(decrypt(argv[i + 2], enc, mac)); return 0
+    if '--db-sync' in argv:  # --db-sync FOLDER DAYS : fill / update the kill database without the window (0 = everything)
+        folder, days = argv[argv.index('--db-sync') + 1], int(argv[argv.index('--db-sync') + 2])
+        cfg = load_config(); cfg['db_dir'] = folder; save_config(cfg)
+        done = threading.Event()
+        def prog(kind, text):
+            print(f'{kind}: {text}', flush=True)
+            if kind in ('done', 'paused', 'error'):
+                done.set()
+        DBSync(open_kdb(cfg), days, prog).start(); done.wait()
+        print(json.dumps(open_kdb(cfg).stats())); return 0
     if '--send-intel' in argv:  # --send-intel FILE : send a saved local list / d-scan (what the clipboard watch does)
         cfg = load_config()
         text = Path(argv[argv.index('--send-intel') + 1]).read_text(encoding='utf-8')
