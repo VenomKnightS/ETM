@@ -355,7 +355,7 @@
 <div id="page-ships" class="page">
   <div class="card">
     <div class="label-row"><span class="title">Matchups — what killed what</span><span class="sub" id="ships-sum"></span></div>
-    <div class="filter-row"><span class="seg" id="ships-mode"><button data-v="killed" class="on">Ships killed</button><button data-v="kills">Kills with</button><button data-v="deaths">Deaths in</button></span></div>
+    <div class="filter-row"><span class="seg" id="ships-mode"><button data-v="killed" class="on">Ships killed</button><button data-v="kills">Kills with</button><button data-v="deaths">Deaths in</button><button data-v="h2h" style="display:none">⚔ Head to head</button></span></div>
     <div class="filter-row">
       <select class="f-period"><option value="0">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option></select>
       <label><input type="checkbox" class="f-pods"> Hide capsules</label>
@@ -1633,6 +1633,58 @@ const KB = {
     if (!$('#kml-dlg').open) $('#kml-dlg').showModal();
     if (await Names.load(this.namesFor(slice))) draw();
   },
+  // ── Head to head (ship lookups): for every ship type it met, wins vs losses → who trumps whom ──
+  renderH2H() {
+    const box = $('#ships-list'), me = this.ship(), f = this.filters('ships');
+    const q = $('#ships-search').value.trim().toLowerCase(), grouped = $('#ships-group .on').dataset.v === 'group';
+    const m = new Map(), allW = new Map();
+    const get = t => { let r = m.get(t); if (!r) m.set(t, r = { type: t, w: 0, l: 0, fb: 0, weap: new Map() }); return r; };
+    let kills = 0, losses = 0;
+    for (const { km, kind } of this.mails(f)) {
+      if (kind === 'kill') {
+        const t = km.v[3]; if (f.pods && CAPSULES.has(t)) continue;
+        kills++; const r = get(t); r.w++;
+        for (const a of km.a) if (a[1] === me && a[5] && a[5] !== me) { r.weap.set(a[5], (r.weap.get(a[5]) || 0) + 1); allW.set(a[5], (allW.get(a[5]) || 0) + 1); }
+      } else {
+        losses++;
+        const seen = new Set(), fb = km.a.find(a => a[2]);
+        for (const a of km.a) { const t = a[1]; if (!t || seen.has(t) || (f.pods && CAPSULES.has(t))) continue; seen.add(t); get(t).l++; }
+        if (fb?.[1] && m.has(fb[1])) m.get(fb[1]).fb++;
+      }
+    }
+    let rows = [...m.values()].filter(r => r.type);
+    if (q) rows = rows.filter(r => Names.typeName(r.type).toLowerCase().includes(q) || Names.typeClass(r.type).toLowerCase().includes(q));
+    rows.sort((a, b) => (b.w + b.l) - (a.w + a.l) || b.w - a.w);
+    const who = esc(Names.typeName(me)), pct = r => Math.round(r.w / (r.w + r.l) * 100);
+    const topW = [...allW].sort((a, b) => b[1] - a[1]), totW = topW.reduce((s, x) => s + x[1], 0);
+    $('#ships-sum').textContent = `${fmtNum(kills)} kills · ${fmtNum(losses)} losses · ${rows.length} ship types met`;
+    $('#ships-hint').innerHTML = `<b>Win %</b> = how often the ${who} killed that ship type ÷ (those kills + ${who} losses that type was on). Turn on <b>Solo only</b> for true 1-v-1s; gang fights blur it. Small counts are greyed.`
+      + (topW.length ? `<div style="margin-top:4px">How it kills: ${topW.slice(0, 6).map(([w, n]) => `${esc(Names.typeName(w))} ${Math.round(n / totW * 100)}%`).join(' · ')}</div>` : '');
+    const rowHTML = r => {
+      const n = r.w + r.l, p = pct(r), open = this.open.ships === r.type, thin = n < 3;
+      const html = `<div class="lrow${open ? ' open' : ''}" data-type="${r.type}" style="${thin ? 'opacity:.55' : ''}">${this.shipRowHTML(r.type,
+        `<div class="big ${p >= 50 ? 'green' : 'red'}">${p}%</div><div class="cls">${fmtNum(n)} fight${n === 1 ? '' : 's'}</div>`,
+        ` · <span class="green">${fmtNum(r.w)} won</span> / <span class="red">${fmtNum(r.l)} lost</span><div class="bar" style="width:140px;display:flex"><div class="k" style="width:${p}%"></div><div class="l" style="width:${100 - p}%"></div></div>`)}</div>`;
+      if (!open) return html;
+      const ws = [...r.weap].sort((a, b) => b[1] - a[1]), tn = esc(Names.typeName(r.type));
+      return html + `<div class="drill">${r.w ? `<h4>${who} weapons on its ${fmtNum(r.w)} ${tn} kill${r.w === 1 ? '' : 's'}</h4>${this.drillList(ws, v => '×' + v)}` : `<h4>No ${tn} kills yet</h4>`}
+        <div class="cls" style="margin:4px 0">${r.l ? `A ${tn} was on ${fmtNum(r.l)} ${who} loss${r.l === 1 ? '' : 'es'}${r.fb ? ` and landed the final blow on ${fmtNum(r.fb)}` : ''}.` : `No ${who} losses with a ${tn} on them.`}</div>
+        ${r.w ? `<div class="dl tap" data-kml="v|${r.type}|*"><span></span><span class="teal">Open the ${fmtNum(r.w)} wins</span><span class="cnt">›</span></div>` : ''}
+        ${r.l ? `<div class="dl tap" data-kml="sd|${me}|${r.type}"><span></span><span class="teal">Open the ${fmtNum(r.l)} losses</span><span class="cnt">›</span></div>` : ''}
+        <div class="row"><button class="btn sm ghost" data-subfits="flown|${me}" style="margin-top:8px">🧩 ${who} fits + inferred</button><button class="btn sm ghost" data-subfits="victims|${r.type}" style="margin-top:8px">🧩 ${tn} fits it beat</button><a class="btn sm ghost" href="https://zkillboard.com/fits/${r.type}/" target="_blank" rel="noopener" style="margin-top:8px">zKill ${tn} fits ↗</a></div></div>`;
+    };
+    if (!rows.length) box.innerHTML = `<div class="empty">${this.kms.size ? 'Nothing here for these filters.' : 'No killmails loaded yet — use ⇣ Load older or ⇊ Load all.'}</div>`;
+    else if (!grouped) box.innerHTML = rows.map(rowHTML).join('');
+    else {
+      const g = new Map();
+      for (const r of rows) { const c = Names.typeClass(r.type) || 'Other'; if (!g.has(c)) g.set(c, []); g.get(c).push(r); }
+      box.innerHTML = [...g.entries()].map(([c, rs]) => {
+        const w = rs.reduce((s, r) => s + r.w, 0), l = rs.reduce((s, r) => s + r.l, 0);
+        return `<div class="group-hdr"><span>${esc(c)}</span><span>${w + l ? Math.round(w / (w + l) * 100) : 0}% · ${fmtNum(w)}–${fmtNum(l)}</span></div>` + rs.map(rowHTML).join('');
+      }).join('');
+    }
+    this.ensureTypeNames([...rows.map(r => r.type), ...allW.keys()]);
+  },
   async namesLater(ids) { if (await Names.load(ids.filter(i => !Names.name(i)))) this.scheduleRender(); },
   async ensureTypeNames(types) { if (await Names.load(types.filter(t => !Names.knownType(t)))) this.scheduleRender(); },
 
@@ -1645,8 +1697,11 @@ const KB = {
     $('#ships-mode [data-v=killed]').textContent = ship ? 'It killed' : 'Ships killed';
     $('#ships-mode [data-v=deaths]').textContent = ship ? 'It died to' : 'Deaths in';
     $('#ships-mode [data-v=kills]').style.display = ship ? 'none' : '';
+    $('#ships-mode [data-v=h2h]').style.display = ship ? '' : 'none';
     let mode = $('#ships-mode .on').dataset.v;
     if (ship && mode === 'kills') mode = 'killed';
+    if (!ship && mode === 'h2h') mode = 'killed';
+    if (ship && mode === 'h2h') return this.renderH2H();
     const grouped = $('#ships-group .on').dataset.v === 'group';
     const f = this.filters('ships');
     const q = $('#ships-search').value.trim().toLowerCase();
