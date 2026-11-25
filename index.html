@@ -583,6 +583,8 @@
     <li>Then use <b>🖥 Send to PC</b> on any fit, or swipe the <b>⇧</b> strip on a fit up to throw it. On the PC it lands on the clipboard: Ctrl+V into Pyfa or EVE's fitting window (Import from clipboard).</li>
   </ol>
   <div class="row"><input id="pcl-code" class="grow" type="text" placeholder="ABCD-EFGH-JK" autocomplete="off" autocapitalize="characters" spellcheck="false" style="font-family:Consolas,monospace;letter-spacing:2px"><button class="btn green" id="pcl-save">Link</button></div>
+  <div class="muted" style="font-size:12px;margin:6px 0 4px">…or, if you set a <b>Password</b> in the PC helper:</div>
+  <div class="row"><input id="pcl-pw" class="grow" type="password" placeholder="Your PC link password" autocomplete="current-password"><button class="btn" id="pcl-pw-go">Link with password</button></div>
   <div id="pcl-status" class="status-line"></div>
   <p class="muted" style="font-size:11px">Fits travel through the free ntfy.sh relay, compressed and encrypted with a key made from your code, so the relay can't read them. The code stays on this device and isn't included in backups.</p>
   <div class="row" style="justify-content:flex-end"><button class="btn sm red" id="pcl-unlink">Unlink</button><button class="btn" id="pcl-close">Close</button></div>
@@ -1487,7 +1489,7 @@ const KB = {
     if (id < 0) {
       $('#kb-header').innerHTML = `<img class="char-portrait" src="${typeIcon(-id, 128)}" alt="">
         <div class="grow"><div class="char-name">${esc(Names.typeName(-id))}</div><div class="char-corp">${esc(Names.typeClass(-id))} · every pilot flying it, newest first</div></div>
-        <button class="btn sm ghost" data-inf="${-id}">🛠 Popular fits</button>`;
+        <div class="row" style="gap:6px;justify-content:flex-end"><button class="btn sm ghost" data-subfits="flown|${-id}">🧩 Fits seen</button><button class="btn sm ghost" data-inf="${-id}">🛠 Popular fits</button></div>`;
       $('#kb-zk-link').innerHTML = `<a href="https://zkillboard.com/ship/${-id}/" target="_blank" rel="noopener">Open on zKillboard ↗</a>`;
     } else
     $('#kb-header').innerHTML = `<img class="char-portrait" src="${portrait(id)}" alt="">
@@ -1638,7 +1640,7 @@ const KB = {
       if (mode === 'killed') {
         const by = [...x.r.by.entries()].sort((a, b) => b[1] - a[1]), vt = esc(Names.typeName(x.type));
         return html + `<div class="drill"><h4>${who} was flying… when killing ${vt}</h4>${this.drillList(by, v => '×' + v, t => `v|${x.type}|${t}`)}
-          <div class="dl tap" data-kml="v|${x.type}|*" style="margin-top:4px"><span></span><span class="teal">Show all ${fmtNum(x.n)} ${vt} kills</span><span class="cnt">›</span></div>${fitsBtn(x.type)}</div>`;
+          <div class="dl tap" data-kml="v|${x.type}|*" style="margin-top:4px"><span></span><span class="teal">Show all ${fmtNum(x.n)} ${vt} kills</span><span class="cnt">›</span></div><div class="row">${fitsBtn(x.type)}<button class="btn sm ghost" data-subfits="victims|${x.type}" style="margin-top:8px">🧩 Their fits (from these ${fmtNum(x.n)} kills)</button></div></div>`;
       }
       const r = x.r, tot = r.kills + r.deaths, kp = tot ? Math.round(r.kills / tot * 100) : 0;
       const killed = [...r.killed.entries()].sort((a, b) => b[1] - a[1]);
@@ -1647,7 +1649,7 @@ const KB = {
       const dHTML = `<div><h4>What it died to (${fmtNum(r.deaths)} losses)</h4>${this.drillList(died, v => `×${v.n}${v.fb ? ` <span class="muted" title="final blows">(${v.fb} FB)</span>` : ''}`, t => `sd|${r.type}|${t}`)}${r.deaths ? `<div class="dl tap" data-kml="sd|${r.type}|*"><span></span><span class="teal">All ${fmtNum(r.deaths)} losses</span><span class="cnt">›</span></div>` : ''}</div>`;
       return html + `<div class="drill"><div class="cls" style="margin-bottom:4px">ISK killed ${fmtISK(r.iskK)} · ISK lost ${fmtISK(r.iskL)} · win rate ${kp}%</div>
         <div class="drill-cols">${mode === 'kills' ? kHTML + dHTML : dHTML + kHTML}</div>
-        <div class="cls" style="margin-top:6px">"Died to" counts each enemy ship type once per loss; FB = it landed the final blow.</div>${fitsBtn(r.type)}</div>`;
+        <div class="cls" style="margin-top:6px">"Died to" counts each enemy ship type once per loss; FB = it landed the final blow.</div><div class="row">${fitsBtn(r.type)}<button class="btn sm ghost" data-subfits="flown|${r.type}" style="margin-top:8px">🧩 Fits flown${r.deaths ? ` (${fmtNum(r.deaths)} losses)` : ''} + inferred on kills</button></div></div>`;
     };
     if (!rows.length) box.innerHTML = `<div class="empty">${this.kms.size ? 'Nothing here for these filters.' : 'No killmails cached yet — sync this pilot.'}</div>`;
     else if (!grouped) box.innerHTML = rows.map(rowHTML).join('');
@@ -2720,7 +2722,78 @@ const INF = {
   },
   eftFor(i) {
     const { ship, res } = this.last, c = res.clusters[i], km = c.kms[0];
-    return KMV.toEFT(km, `${Names.typeName(ship)}, Popular #${i + 1}`);
+    return KMV.toEFT(km, `${Names.typeName(ship)}, ${res.label || 'Popular'} #${i + 1}`);
+  },
+
+  // ── Fits from the killboard data already downloaded for the pilot or ship being looked at ──
+  //  flown:   the subject's own losses in this hull give exact fits; its kills in the hull are matched
+  //           to those fits by the weapon the killmail lists (that's the "inferred" part).
+  //  victims: exact fits of the ships of this type the subject killed.
+  async showSubject(role, hull) {
+    const run = ++this.run, dlg = $('#inf-dlg');
+    const who = KB.isShip() ? Names.typeName(KB.ship()) : (KB.current()?.name || 'This pilot');
+    $('#inf-title').textContent = role === 'victims' ? `${Names.typeName(hull)} fits ${who} killed` : KB.isShip() ? `${Names.typeName(hull)} fits seen` : `${who}'s ${Names.typeName(hull)} fits`;
+    $('#inf-body').innerHTML = '<div class="empty">Gathering killmails…</div>';
+    if (!dlg.open) dlg.showModal();
+    const all = KB.mails(KB.filters('ships'));
+    const fitMails = role === 'victims' ? all.filter(m => m.kind === 'kill' && m.km.v[3] === hull) : all.filter(m => m.kind === 'loss' && m.km.v[3] === hull);
+    const kills = role === 'flown' ? all.filter(m => m.kind === 'kill' && KB.myShipOn(m.km) === hull) : [];
+    const full = [];
+    let i = 0, done = 0;
+    const worker = async () => {
+      while (i < fitMails.length && run === this.run) {
+        const m = fitMails[i++], id = m.km.id, hash = KB.st?.list[id]?.[0];
+        try {
+          let km = KMV.cache.get(id);
+          if (!km && hash) { km = await ESI.req(`/killmails/${id}/${hash}/`, { retries: 2 }); KMV.cache.set(id, km); }
+          if (km) full.push(km);
+        } catch { }
+        if (++done % 5 === 0 && run === this.run) $('#inf-body').innerHTML = `<div class="empty">Reading fits ${done} / ${fitMails.length}…</div>`;
+      }
+    };
+    await Promise.all(Array.from({ length: 8 }, worker));
+    if (run !== this.run) return;
+    // group identical fits
+    const clusters = new Map();
+    for (const km of full) {
+      const sig = this.signature(km); if (sig.empty) continue;
+      let c = clusters.get(sig.key);
+      if (!c) clusters.set(sig.key, c = { racks: sig.racks, kms: [], isk: 0, kills: 0, types: new Set(), pilots: new Set() });
+      c.kms.push(km); c.isk += KB.st?.list[km.killmail_id]?.[1] || 0;
+      for (const it of KMV.flatten(km.victim.items)) c.types.add(it.item_type_id);
+      if (km.victim.character_id) c.pilots.add(km.victim.character_id);
+    }
+    const list = [...clusters.values()].sort((a, b) => b.kms.length - a.kms.length);
+    // infer: each kill → the fit that carries the weapon the killmail shows (same pilot's fit first, then the most common)
+    const weapons = new Map(); let unmatched = 0;
+    for (const { km } of kills) {
+      const mine = km.a.filter(a => KB.isShip() ? a[1] === hull : a[0] === KB.charId && a[1] === hull);
+      for (const a of mine) {
+        const w = a[5]; if (w && w !== hull) weapons.set(w, (weapons.get(w) || 0) + 1);
+        const fits = list.filter(c => w && c.types.has(w));
+        const best = fits.find(c => a[0] && c.pilots.has(a[0])) || fits[0];
+        if (best) best.kills++; else unmatched++;
+      }
+    }
+    for (const c of list) c.kms.sort((a, b) => b.killmail_id - a.killmail_id);
+    await Names.load([...list.flatMap(c => [...Object.values(c.racks).flat(), ...KMV.flatten(c.kms[0].victim.items).map(x => x.item_type_id)]), ...weapons.keys()]);
+    if (run !== this.run) return;
+    const res = { at: Date.now(), clusters: list.slice(0, 15), n: full.filter(k => !this.signature(k).empty).length, hashes: Object.fromEntries(full.map(k => [k.killmail_id, KB.st?.list[k.killmail_id]?.[0]])), label: role === 'victims' ? 'Killed' : 'Seen' };
+    this.last = { ship: hull, res };
+    if (!res.clusters.length) {
+      $('#inf-body').innerHTML = `<div class="empty">${role === 'victims' ? 'No fits on these kills (empty hulls or capsules).' : `No ${esc(Names.typeName(hull))} losses in the downloaded killmails, so there's no exact fit to go on.${kills.length ? ` ${kills.length} kills in it — weapons used: ${[...weapons].map(([w, n]) => `${esc(Names.typeName(w))} ×${n}`).join(', ') || 'none listed'}.` : ''}${KB.isShip() ? ' Try ⇣ Load older for more.' : ''}`}</div>`;
+      return;
+    }
+    this.render(hull, res);
+    const intro = role === 'victims'
+      ? `Exact fits of the ${res.n} ${esc(Names.typeName(hull))} kills in the downloaded killmails, grouped when the modules match.`
+      : `Exact fits from ${res.n} ${esc(Names.typeName(hull))} loss${res.n === 1 ? '' : 'es'}${KB.isShip() ? ' (all pilots)' : ''}. ${kills.length ? `<b>Inferred:</b> each of the ${kills.length} kill${kills.length === 1 ? '' : 's'} in this hull is matched to the fit carrying the weapon on that killmail${KB.isShip() ? ' — the same pilot\'s fit first' : ''}.` : ''}`
+        + (weapons.size ? `<div style="margin-top:4px">Weapons on kills: ${[...weapons].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([w, n]) => `${esc(Names.typeName(w))} ×${n}`).join(' · ')}${unmatched ? ` · <span class="orange">${unmatched} kill${unmatched === 1 ? '' : 's'} matched no lost fit</span>` : ''}</div>` : '');
+    $('#inf-body .cls.muted').innerHTML = intro;
+    $$('#inf-body [data-infcard] .label-row .title').forEach((t, k) => {
+      const c = res.clusters[k];
+      t.textContent = `#${k + 1} · ${role === 'victims' ? `killed ${c.kms.length}×` : `lost ${c.kms.length}×`}${role === 'flown' && kills.length ? ` · ☠ inferred on ${c.kills} kill${c.kills === 1 ? '' : 's'}` : ''}`;
+    });
   },
   wire() {
     $('#inf-close').onclick = () => { this.run++; $('#inf-dlg').close(); };
@@ -2728,13 +2801,14 @@ const INF = {
       const b = e.target.closest('button'); if (!b || !this.last) return;
       if (b.dataset.infsave !== undefined) {
         const i = +b.dataset.infsave, km = this.last.res.clusters[i].kms[0];
-        FITS.openEditor({ eft: this.eftFor(i), name: `${Names.typeName(this.last.ship)} — popular #${i + 1}`, src: { km: km.killmail_id, hash: this.last.res.hashes[km.killmail_id] } });
+        FITS.openEditor({ eft: this.eftFor(i), name: `${Names.typeName(this.last.ship)} — ${(this.last.res.label || 'popular').toLowerCase()} #${i + 1}`, src: { km: km.killmail_id, hash: this.last.res.hashes[km.killmail_id] } });
       }
       if (b.dataset.infpc !== undefined) PCL.sendFit(`${Names.typeName(this.last.ship)} — popular #${+b.dataset.infpc + 1}`, this.eftFor(+b.dataset.infpc));
       if (b.dataset.infcopy !== undefined) navigator.clipboard.writeText(this.eftFor(+b.dataset.infcopy)).then(() => flash('Fit copied.'), () => flash('Clipboard blocked by the browser.', true));
       if (b.dataset.infkm !== undefined) { const km = this.last.res.clusters[+b.dataset.infkm].kms[0]; KMV.show(km.killmail_id, this.last.res.hashes[km.killmail_id]); }
     };
     document.addEventListener('click', e => { const b = e.target.closest('[data-inf]'); if (b) { e.stopPropagation(); INF.show(+b.dataset.inf); } }, true);
+    document.addEventListener('click', e => { const b = e.target.closest('[data-subfits]'); if (b) { e.stopPropagation(); const [role, hull] = b.dataset.subfits.split('|'); INF.showSubject(role, +hull); } }, true);
   },
 };
 
@@ -2747,6 +2821,31 @@ const INF = {
 const PCL = {
   RELAY: 'https://ntfy.sh',
   SALT: 'etm-pclink-v1', ITER: 150000,
+  PW_SALT: 'etm-pclink-pw-v1', PW_ITER: 300000, // must match etm_pc_link.py
+  async pwKeys(pw) {
+    const enc = new TextEncoder();
+    const base = await crypto.subtle.importKey('raw', enc.encode(pw.trim()), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(this.PW_SALT), iterations: this.PW_ITER }, base, 80 * 8));
+    const hk = raw => crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    return { topic: 'etm-p-' + [...bits.slice(0, 16)].map(b => b.toString(16).padStart(2, '0')).join(''), enc: await hk(bits.slice(16, 48)), mac: await hk(bits.slice(48, 80)) };
+  },
+  // Password link: the PC helper keeps its pairing code posted, locked with the password. Fetch and unlock it.
+  async codeFromPassword(pw) {
+    const k = await this.pwKeys(pw);
+    let r;
+    try { r = await fetch(`${this.RELAY}/${k.topic}/json?poll=1&since=all`); }
+    catch { throw new Error('no connection to ntfy.sh'); }
+    if (!r.ok) throw new Error(`ntfy.sh answered ${r.status}`);
+    const bodies = (await r.text()).split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(e => e?.event === 'message').map(e => e.message || '');
+    const msgs = this.assemble(bodies);
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      let m; try { m = JSON.parse(await this.decrypt(msgs[i], k)); } catch { continue; }
+      if (m.k === 'revoked') throw new Error('that password was removed on the PC — use the code, or set a new password there');
+      if (m.k === 'code' && m.code) return m.code;
+    }
+    return null;
+  },
   _keys: null,
   norm: c => (c || '').toUpperCase().replace(/[^A-Z0-9]/g, ''),
   code() { return (LS.get(KEYS.pclink, {}).code || ''); },
@@ -2820,8 +2919,8 @@ const PCL = {
     }
     return out;
   },
-  async decrypt(payload) {
-    const k = await this.keys();
+  async decrypt(payload, k = null) {
+    k ||= await this.keys();
     const bin = atob(payload.slice(5)), raw = Uint8Array.from(bin, c => c.charCodeAt(0));
     const nonce = raw.slice(0, 16), ct = raw.slice(16, raw.length - 16), tag = raw.slice(raw.length - 16);
     const macIn = new Uint8Array(2 + 16 + ct.length); macIn.set([0x76, 0x31]); macIn.set(nonce, 2); macIn.set(ct, 18);
@@ -2916,6 +3015,18 @@ const PCL = {
   },
   wire() {
     $('#pcl-close').onclick = () => $('#pcl-dlg').close();
+    $('#pcl-pw-go').onclick = async () => {
+      const pw = $('#pcl-pw').value;
+      if (pw.trim().length < 8) { flash('PC link passwords are at least 8 characters.', true); return; }
+      $('#pcl-status').textContent = 'Checking the password…';
+      let code;
+      try { code = await this.codeFromPassword(pw); }
+      catch (e) { $('#pcl-status').textContent = '⚠ ' + e.message; return; }
+      if (!code) { $('#pcl-status').innerHTML = '⚠ Nothing found for that password. Check the spelling, and that the PC helper is running with this password set — it keeps the link posted only while it runs (the relay forgets after about 12 hours).'; return; }
+      $('#pcl-pw').value = '';
+      $('#pcl-code').value = code;
+      $('#pcl-save').click();
+    };
     $('#pcl-save').onclick = async () => {
       const c = this.norm($('#pcl-code').value);
       if (c.length < 10) { flash('The code has 10 letters/numbers, like ABCD-EFGH-JK.', true); return; }
