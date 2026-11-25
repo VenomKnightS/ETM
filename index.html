@@ -320,6 +320,7 @@
       <button class="btn sm" id="kb-ship-btn">Look up</button>
     </div>
     <button class="btn sm green" id="kb-sync">⟳ Sync</button>
+    <span id="kb-all-wrap" style="display:none" class="row"><select id="kb-all-until" title="How far back ⇊ Load all goes"><option value="30">back 30 days</option><option value="90" selected>back 90 days</option><option value="365">back 1 year</option><option value="0">everything</option></select><button class="btn sm gold" id="kb-all">⇊ Load all</button></span>
     <button class="btn sm ghost" id="kb-remove" title="Remove from this list">✕</button>
     <div id="sync-info"><span id="sync-text"></span><div class="progress"><div id="sync-bar"></div></div></div>
   </div>
@@ -1091,9 +1092,9 @@ const Sync = {
   },
   stop(charId) { const j = this.jobs.get(charId); if (j) j.abort = true; },
   // full=false: only the newest zKill page (quick look at a pilot). full=true: whole history.
-  async run(charId, { full = true } = {}) {
+  async run(charId, { full = true, all = false, until = 0 } = {}) {
     if (this.jobs.has(charId)) return this.jobs.get(charId).promise;
-    const job = { charId, full, abort: false, phase: 'pages', page: 0, newIds: 0, total: 0, toFetch: 0, fetched: 0, failed: 0, note: '', error: '' };
+    const job = { charId, full, all, until, oldest: 0, abort: false, phase: 'pages', page: 0, newIds: 0, total: 0, toFetch: 0, fetched: 0, failed: 0, note: '', error: '' };
     this.jobs.set(charId, job);
     job.promise = this._run(job).catch(e => { job.error = e.message; console.error(e); })
       .finally(() => { job.done = true; this.jobs.delete(charId); this.emit(job); });
@@ -1101,13 +1102,15 @@ const Sync = {
     return job.promise;
   },
   async _run(job) {
-    const { charId, full } = job;
+    const { charId, full, all } = job;
     const st = await this.state(charId);
     job.st = st;
     const known = st.list;
     // ── Phase 1: list of killmail IDs + hashes from zKillboard ──
     if (charId < 0) {
       // A ship type has far too much history to take whole: the newest page each time, plus one older page per ⇣ Load older.
+      // ⇊ Load all: keep paging (fetching details as it goes) until zKillboard runs out, the date limit is reached, or Stop.
+      if (all) return this._shipAll(job, st, known);
       const pages = [1]; if (full) pages.push(Math.max(2, (st.pagesDone || 1) + 1));
       for (const page of pages) {
         if (job.abort) break;
@@ -1155,6 +1158,38 @@ const Sync = {
       page++;
     }
     await DB.put('charSync', st);
+    await this._details(job, st, known);
+    st.lastSync = Date.now();
+    await DB.put('charSync', st);
+  },
+  async _shipAll(job, st, known) {
+    const ship = -job.charId;
+    if (KB.charId === job.charId && KB.kms.size) job.oldest = Math.min(...[...KB.kms.values()].map(k => k.t)); // already-loaded history counts toward the date limit
+    let page = 1;
+    while (!job.abort) {
+      job.phase = 'pages'; job.page = page; this.emit(job);
+      let data;
+      try { data = await ZK.get(`/shipTypeID/${ship}/page/${page}/`); }
+      catch (e) { if (page > 1) { job.note = `zKillboard stopped at page ${page} (${e.message}) — that's as far back as its API goes.`; break; } throw e; }
+      if (!Array.isArray(data) || !data.length) { job.note = 'Reached the end of what zKillboard lists for this ship.'; break; }
+      let fresh = 0;
+      for (const k of data) {
+        const id = k.killmail_id, z = k.zkb || {};
+        if (!id || !z.hash || known[id]) continue;
+        known[id] = [z.hash, Math.round(z.totalValue || 0), z.solo ? 1 : 0, z.npc ? 1 : 0];
+        job.newIds++; fresh++;
+      }
+      st.pagesDone = Math.max(st.pagesDone || 0, page);
+      await DB.put('charSync', st);
+      await this._details(job, st, known);
+      if (job.until && job.oldest && job.oldest < job.until) { job.note = `Reached ${fmtDate(job.until)} — stopped there as asked.`; break; }
+      // pages already fully known: jump straight past them
+      page = fresh || page >= st.pagesDone ? page + 1 : st.pagesDone + 1;
+    }
+    st.lastSync = Date.now();
+    await DB.put('charSync', st);
+  },
+  async _details(job, st, known) {
     // ── Phase 2: killmail details from ESI, newest first ──
     const ids = Object.keys(known).map(Number).sort((a, b) => b - a);
     const have = await DB.keysIn('killmails', ids);
@@ -1173,8 +1208,10 @@ const Sync = {
         const id = todo[idx++];
         try {
           const km = await ESI.req(`/killmails/${id}/${known[id][0]}/`);
-          batch.push(trimKM(km));
+          const t = trimKM(km);
+          batch.push(t);
           job.fetched++;
+          if (!job.oldest || t.t < job.oldest) job.oldest = t.t;
         } catch (e) {
           job.failed++; job.lastError = e.message;
           if (e.status === 404 || e.status === 422) batch.push({ id, bad: 1 }); // bad hash: don't retry forever
@@ -1184,8 +1221,6 @@ const Sync = {
     };
     await Promise.all(Array.from({ length: 8 }, worker));
     await flush();
-    st.lastSync = Date.now();
-    await DB.put('charSync', st);
   },
 };
 
@@ -1266,6 +1301,7 @@ const KB = {
     $('#kb-ship-star').className = 'btn sm ' + (scur?.star ? 'gold' : 'ghost');
     $('#kb-ship-star').disabled = !scur;
     $('#kb-remove').disabled = $('#kb-sync').disabled = !cur;
+    $('#kb-all-wrap').style.display = ship ? '' : 'none';
     $('#kb-sync').title = ship ? 'Download the next older page of this ship\'s killmails from zKillboard' : '';
   },
 
@@ -1361,14 +1397,16 @@ const KB = {
     const bar = $('#sync-bar');
     let txt = '';
     if (job && !job.done) {
-      if (job.phase === 'pages') { txt = `Reading zKillboard page ${job.page}… (${fmtNum(job.newIds)} new)`; bar.style.width = '5%'; }
+      if (job.phase === 'pages') { txt = `Reading zKillboard page ${job.page}… (${fmtNum(job.newIds)} new)` + (job.all && job.oldest ? ` · back to ${fmtDate(job.oldest)} so far` : ''); bar.style.width = '5%'; }
       else {
         const pct = job.toFetch ? Math.round(job.fetched / job.toFetch * 100) : 100;
-        txt = `Downloading killmails ${fmtNum(job.fetched)} / ${fmtNum(job.toFetch)}${job.failed ? ` · ${job.failed} failed` : ''}`;
+        txt = (job.all ? `Loading all — page ${job.page} · ` : '') + `Downloading killmails ${fmtNum(job.fetched)} / ${fmtNum(job.toFetch)}${job.failed ? ` · ${job.failed} failed` : ''}` + (job.all && job.oldest ? ` · back to ${fmtDate(job.oldest)}` : '');
         bar.style.width = pct + '%';
       }
       $('#kb-sync').textContent = '■ Stop';
+      $('#kb-all').disabled = true;
     } else if (this.isShip()) {
+      $('#kb-all').disabled = false;
       bar.style.width = '0';
       $('#kb-sync').textContent = '⇣ Load older';
       if (st) {
@@ -1595,13 +1633,20 @@ const KB = {
     if (!$('#kml-dlg').open) $('#kml-dlg').showModal();
     if (await Names.load(this.namesFor(slice))) draw();
   },
+  async namesLater(ids) { if (await Names.load(ids.filter(i => !Names.name(i)))) this.scheduleRender(); },
   async ensureTypeNames(types) { if (await Names.load(types.filter(t => !Names.knownType(t)))) this.scheduleRender(); },
 
   // ── Ships tab: one list, three views (ships killed / kills with / deaths in) ──
   renderShips() {
     const box = $('#ships-list');
     if (!this.charId) { box.innerHTML = '<div class="empty">Pick a pilot or ship above.</div>'; $('#ships-sum').textContent = ''; return; }
-    const mode = $('#ships-mode .on').dataset.v;
+    const ship = this.isShip();
+    // A ship lookup has one hull, so its views are simply "it killed" and "it died to".
+    $('#ships-mode [data-v=killed]').textContent = ship ? 'It killed' : 'Ships killed';
+    $('#ships-mode [data-v=deaths]').textContent = ship ? 'It died to' : 'Deaths in';
+    $('#ships-mode [data-v=kills]').style.display = ship ? 'none' : '';
+    let mode = $('#ships-mode .on').dataset.v;
+    if (ship && mode === 'kills') mode = 'killed';
     const grouped = $('#ships-group .on').dataset.v === 'group';
     const f = this.filters('ships');
     const q = $('#ships-search').value.trim().toLowerCase();
@@ -1611,8 +1656,14 @@ const KB = {
       const { rows: vr, total } = this.victimStats(f);
       rows = vr.map(r => ({ type: r.type, n: r.count, isk: r.isk, r }));
       $('#ships-sum').textContent = `${fmtNum(total)} kills · ${vr.length} ship types`;
-      $('#ships-hint').innerHTML = `Each row is a ship type ${who} <b>destroyed</b>. Tap one to see what they were flying, then tap an entry to open those kills.`;
+      $('#ships-hint').innerHTML = ship ? `Each row is a ship type the ${who} <b>killed</b>, and how many — in the killmails downloaded here. Tap one to see which pilots did it.` : `Each row is a ship type ${who} <b>destroyed</b>. Tap one to see what they were flying, then tap an entry to open those kills.`;
       need = vr.flatMap(r => [r.type, ...r.by.keys()]);
+    } else if (ship) {
+      const r = this.shipStats(f)[0];
+      rows = r ? [...r.diedTo.entries()].map(([t, d]) => ({ type: t, n: d.n, isk: 0, fb: d.fb, r })) : [];
+      $('#ships-sum').textContent = `${fmtNum(r?.deaths || 0)} losses · ${rows.length} enemy ship types`;
+      $('#ships-hint').innerHTML = `Each row is a ship type that was on a ${who} <b>loss</b> — how many ${who} losses it was on, and how many final blows it landed. Tap one to open those losses.`;
+      need = rows.map(x => x.type);
     } else {
       const all = this.shipStats(f);
       rows = all.filter(r => mode === 'kills' ? r.kills > 0 : r.deaths > 0)
@@ -1630,14 +1681,27 @@ const KB = {
     const rowHTML = x => {
       const open = this.open.ships === x.type;
       let sub = '';
-      if (mode !== 'killed') {
+      if (ship && mode === 'deaths') sub = x.fb ? ` · <span class="muted">${fmtNum(x.fb)} final blow${x.fb === 1 ? '' : 's'}</span>` : '';
+      else if (mode !== 'killed') {
         const r = x.r, kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : (r.kills ? '∞' : '—');
         sub = ` · <span class="green">${fmtNum(r.kills)}</span>/<span class="red">${fmtNum(r.deaths)}</span> · K/D ${kd}`;
       }
       const html = `<div class="lrow${open ? ' open' : ''}" data-type="${x.type}">${this.shipRowHTML(x.type,
-        `<div class="big ${color}">${fmtNum(x.n)}</div><div class="cls">${fmtISK(x.isk)}</div>`,
+        `<div class="big ${color}">${fmtNum(x.n)}</div><div class="cls">${ship && mode === 'deaths' ? (x.n === 1 ? 'loss' : 'losses') : fmtISK(x.isk)}</div>`,
         `${sub}<div class="bar" style="width:140px"><div class="${mode === 'deaths' ? 'l' : 'k'}" style="width:${Math.round(x.n / max * 100)}%"></div></div>`)}</div>`;
       if (!open) return html;
+      if (ship && mode === 'deaths') {
+        const tn = esc(Names.typeName(x.type));
+        return html + `<div class="drill"><div class="dl tap" data-kml="sd|${this.ship()}|${x.type}"><span></span><span class="teal">Open the ${fmtNum(x.n)} ${who} losses a ${tn} was on</span><span class="cnt">›</span></div><div class="row">${fitsBtn(x.type)}</div></div>`;
+      }
+      if (ship && mode === 'killed') {
+        const pilots = new Map(), vt = esc(Names.typeName(x.type));
+        for (const { km } of this.kmlFilter(`v|${x.type}|*`, 'ships')) for (const a of km.a) if (a[1] === this.ship() && a[0]) pilots.set(a[0], (pilots.get(a[0]) || 0) + 1);
+        const top = [...pilots].sort((a, b) => b[1] - a[1]).slice(0, 12);
+        this.namesLater(top.map(p => p[0]));
+        return html + `<div class="drill"><h4>Pilots in the ${who} on these ${vt} kills</h4>${top.map(([id, n]) => `<div class="dl"><span></span><span class="pilot" data-pilot="${id}">${esc(Names.name(id) || '…')}</span><span class="cnt">×${n}</span></div>`).join('') || '<div class="muted">—</div>'}
+          <div class="dl tap" data-kml="v|${x.type}|*" style="margin-top:4px"><span></span><span class="teal">Show all ${fmtNum(x.n)} ${vt} kills</span><span class="cnt">›</span></div><div class="row">${fitsBtn(x.type)}<button class="btn sm ghost" data-subfits="victims|${x.type}" style="margin-top:8px">🧩 Their fits (from these ${fmtNum(x.n)} kills)</button></div></div>`;
+      }
       if (mode === 'killed') {
         const by = [...x.r.by.entries()].sort((a, b) => b[1] - a[1]), vt = esc(Names.typeName(x.type));
         return html + `<div class="drill"><h4>${who} was flying… when killing ${vt}</h4>${this.drillList(by, v => '×' + v, t => `v|${x.type}|${t}`)}
@@ -4725,6 +4789,15 @@ function wire() {
   $('#kb-ship-btn').onclick = () => KB.addShipByName($('#kb-ship-add').value);
   $('#kb-ship-add').onkeydown = e => { if (e.key === 'Enter') KB.addShipByName($('#kb-ship-add').value); };
   $('#kb-ship-add').onchange = e => { if (KB.findShip(e.target.value)?.name.toLowerCase() === e.target.value.trim().toLowerCase()) KB.addShipByName(e.target.value); }; // picked from the suggestions
+  $('#kb-all').onclick = async () => {
+    if (!KB.isShip() || Sync.jobs.has(KB.charId)) return;
+    const days = +$('#kb-all-until').value, z = KB.zkStats.get(KB.charId) || {}, total = (z.shipsDestroyed || 0) + (z.shipsLost || 0);
+    if (!days) {
+      const mins = total ? Math.round(total / 600) : 0; // ~10 killmails a second from EVE's servers
+      if (!confirm(`Load EVERY ${Names.typeName(KB.ship())} killmail zKillboard will list?` + (total ? `\n\nzKillboard counts about ${fmtNum(total)} kills + losses for it. At roughly 10 a second that's about ${mins < 60 ? mins + ' minutes' : (mins / 60).toFixed(1) + ' hours'} and ~${Math.max(1, Math.round(total * 350 / 1e6))} MB on this device.` : '') + `\n\nKeep the app open; ■ Stop works any time and keeps what's loaded. zKillboard may also stop listing older pages before the end.`)) return;
+    }
+    Sync.run(KB.charId, { all: true, until: days ? Date.now() - days * 86400e3 : 0 });
+  };
   $('#kb-ship-star').onclick = () => {
     if (!KB.isShip()) return;
     const t = KB.ships(), c = t.find(x => x.id === KB.ship()); if (!c) return;
